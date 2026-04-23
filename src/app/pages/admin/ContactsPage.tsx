@@ -1,8 +1,9 @@
-import React, { useState } from "react";
-import { Plus, Search, Edit2, Trash2, X, Phone, MapPin, Building2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Plus, Search, Edit2, Trash2, X, Phone, MapPin, Building2, Loader2 } from "lucide-react";
+import { supabase } from "@/app/utils/supabase/client";
 
 interface Contact {
-  id: number;
+  id: string; 
   name: string;
   role: string;
   facility: string;
@@ -11,17 +12,6 @@ interface Contact {
   status: "Active" | "Inactive";
   type: "Hospital" | "Health Center" | "Emergency" | "Government";
 }
-
-const initialContacts: Contact[] = [
-  { id: 1, name: "Rural Health Unit #1", role: "Primary Care", facility: "Brgy. Health Center", phone: "(02) 8123-4567", location: "Barangay San Jose", status: "Active", type: "Health Center" },
-  { id: 2, name: "Dr. Maria Santos", role: "Municipal Health Officer", facility: "Municipal Health Office", phone: "(02) 8234-5678", location: "Municipal Hall", status: "Active", type: "Government" },
-  { id: 3, name: "Provincial Hospital", role: "Emergency Services", facility: "Provincial Hospital", phone: "(02) 8345-6789", location: "Provincial Capitol Compound", status: "Active", type: "Hospital" },
-  { id: 4, name: "PNP Emergency Hotline", role: "Police Emergency", facility: "Philippine National Police", phone: "117", location: "Nationwide", status: "Active", type: "Emergency" },
-  { id: 5, name: "BFP Fire Rescue", role: "Fire Emergency", facility: "Bureau of Fire Protection", phone: "(02) 8426-0219", location: "Municipal Fire Station", status: "Active", type: "Emergency" },
-  { id: 6, name: "Barangay Health Station #2", role: "Primary Care", facility: "Brgy. Health Station", phone: "(02) 8456-7890", location: "Barangay Lumina", status: "Inactive", type: "Health Center" },
-  { id: 7, name: "Red Cross Local Chapter", role: "Disaster Response", facility: "Philippine Red Cross", phone: "143", location: "City Proper", status: "Active", type: "Emergency" },
-  { id: 8, name: "DOH Hotline", role: "Health Information", facility: "Department of Health", phone: "(02) 8651-7800", location: "Nationwide", status: "Active", type: "Government" },
-];
 
 const types = ["Hospital", "Health Center", "Emergency", "Government"];
 
@@ -37,13 +27,33 @@ const typeColors: Record<string, { bg: string; text: string }> = {
 };
 
 export function ContactsPage() {
-  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("All");
   const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ContactForm>(emptyForm);
-  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Kukunin ang totoong data sa Supabase pagkabukas ng page
+  useEffect(() => {
+    fetchContacts();  
+  }, []);
+
+  const fetchContacts = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('emergency_contacts')
+      .select('*')
+      .order('name', { ascending: true });
+      
+    if (!error && data) {
+      setContacts(data as Contact[]);
+    }
+    setLoading(false);
+  };
 
   const filtered = contacts.filter((c) => {
     const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || c.facility.toLowerCase().includes(search.toLowerCase());
@@ -59,17 +69,33 @@ export function ContactsPage() {
     setShowModal(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim() || !form.phone.trim()) return;
+    setSaving(true);
+    
     if (editingId) {
-      setContacts((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
+      const { error } = await supabase.from('emergency_contacts').update(form).eq('id', editingId);
+      if (!error) {
+        await fetchContacts();
+        setShowModal(false);
+      }
     } else {
-      setContacts((prev) => [{ id: Date.now(), ...form }, ...prev]);
+      const { error } = await supabase.from('emergency_contacts').insert([form]);
+      if (!error) {
+        await fetchContacts();
+        setShowModal(false);
+      }
     }
-    setShowModal(false);
+    setSaving(false);
   };
 
-  const handleDelete = (id: number) => { setContacts((prev) => prev.filter((c) => c.id !== id)); setDeleteConfirm(null); };
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from('emergency_contacts').delete().eq('id', id);
+    if (!error) {
+      await fetchContacts();
+    }
+    setDeleteConfirm(null); 
+  };
 
   const activeCount = contacts.filter((c) => c.status === "Active").length;
 
@@ -128,39 +154,51 @@ export function ContactsPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((contact) => {
-              const tc = typeColors[contact.type] || typeColors["Health Center"];
-              return (
-                <tr key={contact.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div>
-                      <span className="text-gray-800 block" style={{ fontSize: "0.875rem" }}>{contact.name}</span>
-                      <span className="text-gray-400" style={{ fontSize: "0.75rem" }}>{contact.role}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4"><span className={`px-3 py-1 rounded-lg ${tc.bg} ${tc.text}`} style={{ fontSize: "0.75rem" }}>{contact.type}</span></td>
-                  <td className="px-6 py-4 text-gray-600" style={{ fontSize: "0.85rem" }}>{contact.phone}</td>
-                  <td className="px-6 py-4 text-gray-500" style={{ fontSize: "0.8rem" }}>{contact.location}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-lg ${contact.status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`} style={{ fontSize: "0.75rem" }}>{contact.status}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-end gap-2">
-                      <button type="button" title="Edit Contact" onClick={() => openEdit(contact)} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"><Edit2 className="w-4 h-4" /></button>
-                      {deleteConfirm === contact.id ? (
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => handleDelete(contact.id)} className="px-2 py-1 bg-red-500 text-white rounded-lg cursor-pointer" style={{ fontSize: "0.7rem" }}>Confirm</button>
-                          <button onClick={() => setDeleteConfirm(null)} className="px-2 py-1 bg-gray-200 text-gray-600 rounded-lg cursor-pointer" style={{ fontSize: "0.7rem" }}>Cancel</button>
-                        </div>
-                      ) : (
-                        <button type="button" title="Delete Contact" onClick={() => setDeleteConfirm(contact.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"><Trash2 className="w-4 h-4" /></button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400" style={{ fontSize: "0.875rem" }}>No contacts found</td></tr>}
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-12 text-center">
+                  <div className="flex justify-center items-center gap-2 text-emerald-600">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span style={{ fontSize: "0.875rem" }}>Loading contacts...</span>
+                  </div>
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400" style={{ fontSize: "0.875rem" }}>No contacts found</td></tr>
+            ) : (
+              filtered.map((contact) => {
+                const tc = typeColors[contact.type] || typeColors["Health Center"];
+                return (
+                  <tr key={contact.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div>
+                        <span className="text-gray-800 block" style={{ fontSize: "0.875rem" }}>{contact.name}</span>
+                        <span className="text-gray-400" style={{ fontSize: "0.75rem" }}>{contact.role}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4"><span className={`px-3 py-1 rounded-lg ${tc.bg} ${tc.text}`} style={{ fontSize: "0.75rem" }}>{contact.type}</span></td>
+                    <td className="px-6 py-4 text-gray-600" style={{ fontSize: "0.85rem" }}>{contact.phone}</td>
+                    <td className="px-6 py-4 text-gray-500" style={{ fontSize: "0.8rem" }}>{contact.location}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-lg ${contact.status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`} style={{ fontSize: "0.75rem" }}>{contact.status}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <button type="button" title="Edit Contact" onClick={() => openEdit(contact)} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"><Edit2 className="w-4 h-4" /></button>
+                        {deleteConfirm === contact.id ? (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => handleDelete(contact.id)} className="px-2 py-1 bg-red-500 text-white rounded-lg cursor-pointer" style={{ fontSize: "0.7rem" }}>Confirm</button>
+                            <button onClick={() => setDeleteConfirm(null)} className="px-2 py-1 bg-gray-200 text-gray-600 rounded-lg cursor-pointer" style={{ fontSize: "0.7rem" }}>Cancel</button>
+                          </div>
+                        ) : (
+                          <button type="button" title="Delete Contact" onClick={() => setDeleteConfirm(contact.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"><Trash2 className="w-4 h-4" /></button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
@@ -214,7 +252,10 @@ export function ContactsPage() {
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setShowModal(false)} className="px-5 py-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors cursor-pointer" style={{ fontSize: "0.875rem" }}>Cancel</button>
-              <button onClick={handleSave} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer" style={{ fontSize: "0.875rem" }}>{editingId ? "Save Changes" : "Add Contact"}</button>
+              <button disabled={saving} onClick={handleSave} className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer disabled:opacity-60" style={{ fontSize: "0.875rem" }}>
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editingId ? "Save Changes" : "Add Contact"}
+              </button>
             </div>
           </div>
         </div>

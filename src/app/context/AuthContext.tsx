@@ -1,92 +1,130 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { supabase } from '../utils/supabase/client';
 
 export interface BHWUser {
   id: string;
-  name: string;
+  full_name: string;
   email: string;
-  role: "BHW Admin" | "BHW Staff";
   barangay: string;
-  avatar?: string;
+  avatar_url?: string;
+  is_active: boolean;
 }
 
 interface AuthContextType {
   user: BHWUser | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Demo accounts
-const DEMO_ACCOUNTS: Record<string, { password: string; user: BHWUser }> = {
-  "maria.santos@bhw.gov.ph": {
-    password: "admin123",
-    user: {
-      id: "bhw-001",
-      name: "Maria Santos",
-      email: "maria.santos@bhw.gov.ph",
-      role: "BHW Admin",
-      barangay: "Barangay San Isidro",
-    },
-  },
-  "juan.delacruz@bhw.gov.ph": {
-    password: "staff123",
-    user: {
-      id: "bhw-002",
-      name: "Juan Dela Cruz",
-      email: "juan.delacruz@bhw.gov.ph",
-      role: "BHW Staff",
-      barangay: "Barangay San Isidro",
-    },
-  },
-};
-
-const SESSION_KEY = "tala_bhw_session";
-
-function loadSession(): BHWUser | null {
-  try {
-    const stored = localStorage.getItem(SESSION_KEY);
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<BHWUser | null>(loadSession);
+  const [user, setUser]           = useState<BHWUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const login = useCallback(async (email: string, password: string) => {
-    // Simulate network delay
-    await new Promise((r) => setTimeout(r, 1200));
+  useEffect(() => {
+    // 1. Initial Auth Check (Optimistic UI for INSTANT Load)
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          // OPTIMISTIC LOAD: Papasukin agad ang user gamit ang placeholder data
+          // para hindi siya ma-kick out habang naghihintay magising ang database!
+          setUser({
+            id: session.user.id,
+            full_name: session.user.email?.split('@')[0] || 'BHW Admin',
+            email: session.user.email || '',
+            barangay: 'Loading...',
+            is_active: true,
+          });
+          
+          setIsLoading(false); // Patayin agad ang loading screen (1 sec pasok agad!)
+          
+          // Kunin ang totoong profile sa background nang tahimik
+          await loadUserProfile(session.user.id);
+          return;
+        }
+      } catch (err) {
+        console.error("Auth init error:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    initAuth();
 
-    const account = DEMO_ACCOUNTS[email.toLowerCase().trim()];
-    if (!account) {
-      return { success: false, error: "No account found with this email address" };
-    }
-    if (account.password !== password) {
-      return { success: false, error: "Incorrect password. Please try again." };
-    }
+    // 2. Listen for Login/Logout events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          await loadUserProfile(session.user.id);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+        }
+      }
+    );
 
-    setUser(account.user);
-    localStorage.setItem(SESSION_KEY, JSON.stringify(account.user));
-    return { success: true };
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') await supabase.auth.getSession();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      subscription.unsubscribe();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
-  const logout = useCallback(() => {
+  // Fetch the BHW Admin profile (Walang strict timeout para iwas error sa Cold Start)
+  const loadUserProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+          .from('bhw_users')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+      if (!error && data) {
+        setUser(data as BHWUser); // I-update ang UI gamit ang totoong data kapag nakuha na
+      }
+    } catch (err) {
+      console.error("Background profile fetch error:", err);
+    }
+  };
+
+  const login = useCallback(async (email: string, password: string) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      
+      if (error) return { success: false, error: error.message };
+      if (!data.user) return { success: false, error: 'Login failed. Try again.' };
+      
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: 'Connection error. Please check your internet.' };
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem(SESSION_KEY);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
-}
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used within AuthProvider");
+  return context;
+};

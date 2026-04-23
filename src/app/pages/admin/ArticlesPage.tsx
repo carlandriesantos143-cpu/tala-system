@@ -1,40 +1,69 @@
-import React, { useState } from "react";
-import { Plus, Search, Edit2, Trash2, X, FileText } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Search, Edit2, Loader2, Trash2, X, FileText } from "lucide-react";
+import { supabase } from "@/app/utils/supabase/client";
+import { useAuth } from "@/app/context/AuthContext";
 
 interface Article {
-  id: number;
+  id: string;
   title: string;
   category: string;
   status: "Published" | "Draft";
   date: string;
   content: string;
+  created_by: string;
 }
 
 type ArticleForm = Pick<Article, "title" | "content" | "category" | "status">;
-
-const initialArticles: Article[] = [
-  { id: 1, title: "Dengue Prevention Tips", category: "Prevention", status: "Published", date: "2026-04-15", content: "Tips on preventing dengue fever in your community..." },
-  { id: 2, title: "First Aid for Burns", category: "First Aid", status: "Published", date: "2026-04-14", content: "Steps to treat minor burns at home..." },
-  { id: 3, title: "Nutrition for Children", category: "Nutrition", status: "Draft", date: "2026-04-12", content: "Essential nutrients for growing children..." },
-  { id: 4, title: "Measles Vaccination Guide", category: "Vaccination", status: "Published", date: "2026-04-10", content: "When and where to get measles vaccines..." },
-  { id: 5, title: "Managing Hypertension", category: "Chronic Care", status: "Draft", date: "2026-04-08", content: "Daily management tips for high blood pressure..." },
-  { id: 6, title: "Safe Drinking Water", category: "Prevention", status: "Published", date: "2026-04-05", content: "How to ensure your water is safe to drink..." },
-  { id: 7, title: "Prenatal Care Basics", category: "Maternal Health", status: "Published", date: "2026-04-03", content: "Essential prenatal care for expecting mothers..." },
-  { id: 8, title: "TB Awareness Campaign", category: "Prevention", status: "Draft", date: "2026-04-01", content: "Understanding tuberculosis signs and symptoms..." },
-];
 
 const categories = ["Prevention", "First Aid", "Nutrition", "Vaccination", "Chronic Care", "Maternal Health"];
 
 const emptyForm: ArticleForm = { title: "", content: "", category: "Prevention", status: "Draft" };
 
 export function ArticlesPage() {
-  const [articles, setArticles] = useState<Article[]>(initialArticles);
+  const { user } = useAuth();
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("All");
   const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
-  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  // 1. Fetch articles from Supabase (health_articles table)
+  const fetchArticles = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('health_articles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // I-format ang data para saktong mag-match sa UI
+      const formattedData = data.map(item => ({
+        id: item.id,
+        title: item.title,
+        content: item.content,
+        category: item.category || "Prevention", 
+        status: item.status as "Published" | "Draft",
+        date: new Date(item.created_at).toISOString().split("T")[0],
+        created_by: item.created_by
+      }));
+
+      setArticles(formattedData);
+    } catch (error) {
+      console.error('Error fetching articles:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // I-load agad ang articles pagka-open ng page
+  useEffect(() => {
+    fetchArticles();
+  }, []);
 
   const filtered = articles.filter((a) => {
     const matchSearch = a.title.toLowerCase().includes(search.toLowerCase());
@@ -54,28 +83,73 @@ export function ArticlesPage() {
     setShowModal(true);
   };
 
-  const handleSave = () => {
-    if (!form.title.trim()) return;
-    if (editingId) {
-      setArticles((prev) => prev.map((a) => (a.id === editingId ? { ...a, ...form } : a)));
-    } else {
-      const newArticle: Article = {
-        id: Date.now(),
-        ...form,
-        date: new Date().toISOString().split("T")[0],
-      };
-      setArticles((prev) => [newArticle, ...prev]);
+  // 2. Save or Update Article to Supabase
+  const handleSave = async () => {
+    if (!form.title.trim() || !user) return; 
+    
+    try {
+      if (editingId) {
+         // UPDATE existing article
+        const { error } = await supabase
+          .from('health_articles')
+          .update({
+            title: form.title,
+            content: form.content,
+            category: form.category,
+            status: form.status
+          })
+          .eq('id', editingId);
+
+          if (error) throw error;
+      } else {
+        // INSERT new article
+        const { error } = await supabase
+          .from('health_articles')
+          .insert([{
+             title: form.title,
+             content: form.content,
+             category: form.category,
+             status: form.status,
+             created_by: user.id
+          }]);
+          
+          if (error) throw error;
+      }
+      
+      await fetchArticles(); // I-refresh ang listahan
+      setShowModal(false);
+    } catch (error) {
+       console.error('Error saving article:', error);
     }
-    setShowModal(false);
   };
 
-  const handleDelete = (id: number) => {
-    setArticles((prev) => prev.filter((a) => a.id !== id));
-    setDeleteConfirm(null);
+  // 3. Delete Article sa Supabase
+  const handleDelete = async (id: string) => {
+    try {
+       const { error } = await supabase
+         .from('health_articles')
+         .delete()
+         .eq('id', id);
+
+       if (error) throw error;
+       
+       await fetchArticles(); // I-refresh ang listahan
+       setDeleteConfirm(null);
+    } catch (error) {
+       console.error('Error deleting article:', error);
+    }
   };
 
   const publishedCount = articles.filter((a) => a.status === "Published").length;
   const draftCount = articles.filter((a) => a.status === "Draft").length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-50/50">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 space-y-6 overflow-auto h-full bg-gray-50/50">

@@ -2,7 +2,6 @@ import { useState } from "react";
 import React from "react";
 import { useNavigate } from "react-router";
 import {
-  Heart,
   Mail,
   Lock,
   Eye,
@@ -10,10 +9,6 @@ import {
   LogIn,
   AlertCircle,
   Shield,
-  ChevronLeft,
-  CheckCircle2,
-  Info,
-  User,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import logo from "@/assets/icons/StarIcon-green.svg";
@@ -27,9 +22,8 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showDemoHint, setShowDemoHint] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -43,25 +37,28 @@ export function LoginPage() {
     }
 
     setLoading(true);
-    const result = await login(email, password);
-    setLoading(false);
+    
+    try {
+      // 20-second timeout para sa Login (sapat na oras para sa Cold Start)
+      const timeoutPromise = new Promise<{success: boolean, error?: string}>((resolve) => 
+        setTimeout(() => resolve({ success: false, error: "Connection Timeout: Server is waking up or internet is slow. Please try again." }), 20000)
+      );
+      
+      const loginPromise = login(email, password);
+      const result = await Promise.race([loginPromise, timeoutPromise]);
 
-    if (result.success) {
-      navigate("/admin");
-    } else {
-      setError(result.error || "Login failed");
+      if (result.success) {
+        navigate("/admin");
+      } else {
+        setError(result.error || "Login failed");
+      }
+    } catch (err) {
+      console.error("Login Exception:", err);
+      setError("Network error: Please check your internet connection.");
+    } finally {
+      // Garantisadong titigil ang loading spinner kahit anong mangyari!
+      setLoading(false); 
     }
-  };
-
-  const fillDemo = (type: "admin" | "staff") => {
-    if (type === "admin") {
-      setEmail("maria.santos@bhw.gov.ph");
-      setPassword("admin123");
-    } else {
-      setEmail("juan.delacruz@bhw.gov.ph");
-      setPassword("staff123");
-    }
-    setError("");
   };
 
   return (
@@ -122,7 +119,7 @@ export function LoginPage() {
                     setEmail(e.target.value);
                     setError("");
                   }}
-                  placeholder="your.name@bhw.gov.ph"
+                  placeholder="admin@bhw.gov.ph"
                   className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all"
                   style={{ fontSize: "0.88rem" }}
                   autoComplete="email"
@@ -186,61 +183,6 @@ export function LoginPage() {
               )}
             </button>
           </form>
-
-          {/* Demo credentials section */}
-          <div className="px-8 pb-8 hidden"> //nakahidden muna
-            <button
-              type="button"
-              onClick={() => setShowDemoHint(!showDemoHint)}
-              className="w-full flex items-center justify-center gap-2 text-gray-400 hover:text-emerald-600 transition-colors cursor-pointer"
-              style={{ fontSize: "0.75rem" }}
-            >
-              <Info className="w-3.5 h-3.5" />
-              {showDemoHint ? "Hide demo credentials" : "Show demo credentials"}
-            </button>
-
-            {showDemoHint && (
-              <div className="mt-3 space-y-2">
-                <button
-                  type="button"
-                  onClick={() => fillDemo("admin")}
-                  className="w-full flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-100 rounded-xl hover:bg-emerald-100 transition-colors cursor-pointer text-left"
-                >
-                  <div className="bg-emerald-200 p-2 rounded-lg">
-                    <Shield className="w-3.5 h-3.5 text-emerald-700" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-emerald-800 font-medium" style={{ fontSize: "0.78rem" }}>
-                      BHW Admin
-                    </p>
-                    <p className="text-emerald-600" style={{ fontSize: "0.68rem" }}>
-                      maria.santos@bhw.gov.ph / admin123
-                    </p>
-                  </div>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fillDemo("staff")}
-                  className="w-full flex items-center gap-3 p-3 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors cursor-pointer text-left"
-                >
-                  <div className="bg-blue-200 p-2 rounded-lg">
-                    <User className="w-3.5 h-3.5 text-blue-700" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-blue-800 font-medium" style={{ fontSize: "0.78rem" }}>
-                      BHW Staff
-                    </p>
-                    <p className="text-blue-600" style={{ fontSize: "0.68rem" }}>
-                      juan.delacruz@bhw.gov.ph / staff123
-                    </p>
-                  </div>
-                  <CheckCircle2 className="w-4 h-4 text-blue-400" />
-                </button>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Footer */}
