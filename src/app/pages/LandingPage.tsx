@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import logo from "../../assets/logo/tala-logo.svg";
+import logo from "../../../public/tala-logo.svg";
 
 export function LandingPage() {
   const navigate = useNavigate();

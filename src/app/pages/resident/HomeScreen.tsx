@@ -9,6 +9,8 @@ import {
   Sparkles,
   Bell,
 } from "lucide-react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "../../services/localDB"; // I-check kung tama ang folder path
 
 interface HomeScreenProps {
   onStartTriage: () => void;
@@ -17,27 +19,6 @@ interface HomeScreenProps {
   onEmergency: () => void;
   isOnline: boolean;
 }
-
-const activeAlerts = [
-  {
-    id: 1,
-    title: "Dengue Alert",
-    area: "Barangay San Jose",
-    priority: "High" as const,
-  },
-  {
-    id: 2,
-    title: "Measles Outbreak",
-    area: "Municipal-wide",
-    priority: "Critical" as const,
-  },
-];
-
-const healthTips = [
-  "Wash hands frequently with soap and water for at least 20 seconds.",
-  "Drink at least 8 glasses of clean water daily.",
-  "Remove stagnant water around your home to prevent dengue.",
-];
 
 export function HomeScreen({
   onStartTriage,
@@ -49,6 +30,22 @@ export function HomeScreen({
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
+
+  // 1. Kumukuha ng Alerts gamit ang tamang table name na 'db.alerts'
+  const activeAlerts = useLiveQuery(
+    () => db.alerts.filter((alert) => alert.status === "active" || alert.status === "Active").toArray(),
+    []
+  ) || [];
+
+  // 2. Kumukuha ng Articles gamit ang tamang table name na 'db.articles'
+  const articles = useLiveQuery(
+    () => db.articles.limit(5).toArray(),
+    []
+  ) || [];
+
+  const tipOfTheDay = articles.length > 0
+    ? articles[new Date().getDate() % articles.length].title
+    : "Wash hands frequently with soap and water for at least 20 seconds.";
 
   return (
     <div className="mx-auto min-h-full w-full max-w-[430px] space-y-5 px-5 py-6 pb-24">
@@ -86,24 +83,26 @@ export function HomeScreen({
         </div>
       )}
 
-      {/* Alert banners */}
+      {/* Dynamic Alert banners (Galing sa localDB) */}
       {activeAlerts.map((alert) => (
         <div
           key={alert.id}
           className={`${
-            alert.priority === "Critical"
+            alert.priority === "Critical" || alert.priority === "High"
               ? "bg-red-50 border-red-200"
               : "bg-amber-50 border-amber-200"
           } border rounded-2xl p-3.5 flex items-center gap-3`}
         >
           <div
             className={`${
-              alert.priority === "Critical" ? "bg-red-100" : "bg-amber-100"
+              alert.priority === "Critical" || alert.priority === "High" 
+                ? "bg-red-100" 
+                : "bg-amber-100"
             } p-2 rounded-xl shrink-0`}
           >
             <AlertTriangle
               className={`w-4 h-4 ${
-                alert.priority === "Critical"
+                alert.priority === "Critical" || alert.priority === "High"
                   ? "text-red-600"
                   : "text-amber-600"
               }`}
@@ -112,7 +111,7 @@ export function HomeScreen({
           <div className="flex-1 min-w-0">
             <p
               className={`font-semibold ${
-                alert.priority === "Critical"
+                alert.priority === "Critical" || alert.priority === "High"
                   ? "text-red-800"
                   : "text-amber-800"
               }`}
@@ -122,18 +121,18 @@ export function HomeScreen({
             </p>
             <p
               className={`${
-                alert.priority === "Critical"
+                alert.priority === "Critical" || alert.priority === "High"
                   ? "text-red-600"
                   : "text-amber-600"
               }`}
               style={{ fontSize: "0.7rem" }}
             >
-              {alert.area}
+              {alert.area || "Barangay Alert"}
             </p>
           </div>
           <Bell
             className={`w-4 h-4 shrink-0 ${
-              alert.priority === "Critical"
+              alert.priority === "Critical" || alert.priority === "High"
                 ? "text-red-400"
                 : "text-amber-400"
             }`}
@@ -224,7 +223,7 @@ export function HomeScreen({
         <ChevronRight className="w-5 h-5 text-red-400" />
       </button>
 
-      {/* Health tips */}
+      {/* Dynamic Health tips (Galing sa localDB) */}
       <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-3">
           <Sparkles className="w-4 h-4 text-emerald-600" />
@@ -236,7 +235,7 @@ export function HomeScreen({
           </span>
         </div>
         <p className="text-emerald-700" style={{ fontSize: "0.82rem", lineHeight: 1.6 }}>
-          {healthTips[new Date().getDate() % healthTips.length]}
+          {tipOfTheDay}
         </p>
       </div>
 

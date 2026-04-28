@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/app/utils/supabase/client";
+import { toast } from "sonner"; 
 import {
   ShieldCheck,
   Users,
@@ -27,6 +29,73 @@ const steps = [
 export function TriagePage() {
   const [activeStep, setActiveStep] = useState(1);
   const [data, setData] = useState<TriageFlowData>(initialData);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Kukunin natin ang saved data galing Supabase kapag nag-load ang page
+useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        // Hahanapin na natin ngayon ang 'data' column
+        const { data: configRow, error } = await supabase
+          .from('triage_config')
+          .select('data')
+          .limit(1)
+          .maybeSingle(); // Para safe kahit walang laman ang table sa umpisa
+
+        if (error) {
+           throw error; 
+        } 
+        
+        if (configRow?.data) {
+          // Kung may naka-save na data, ilagay sa state
+          setData(configRow.data as TriageFlowData);
+        }
+      } catch (err) {
+        console.error("Error fetching triage config:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchConfig();
+  }, []);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      // 1. I-check muna natin kung may existing row na sa database
+      const { data: existingRow } = await supabase
+        .from('triage_config')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+
+      if (existingRow) {
+        // 2. Kung may row na, i-UPDATE natin yung data column
+        const { error } = await supabase
+          .from('triage_config')
+          .update({ data: data })
+          .eq('id', existingRow.id);
+          
+        if (error) throw error;
+      } else {
+        // 3. Kung wala pang row (first time), mag-INSERT tayo
+        const { error } = await supabase
+          .from('triage_config')
+          .insert([{ data: data }]);
+          
+        if (error) throw error;
+      }
+
+      toast.success("Triage configuration saved successfully!");
+    } catch (err) {
+      console.error("Error saving triage config:", err);
+      toast.error("Failed to save configuration.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const stepStats: Record<number, string> = {
     1: data.disclaimer ? "Configured" : "Not set",
@@ -264,13 +333,29 @@ export function TriagePage() {
                 Previous
               </button>
             )}
-            {activeStep < 5 && (
+            
+            {activeStep < 5 ? (
               <button
                 onClick={() => setActiveStep(activeStep + 1)}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors cursor-pointer"
                 style={{ fontSize: "0.85rem" }}
               >
                 Next Step
+              </button>
+            ) : (
+              /* DITO LALABAS ANG SAVE BUTTON SA STEP 5 */
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                style={{ fontSize: "0.85rem" }}
+              >
+                {isSaving ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                {isSaving ? "Saving..." : "Save Configuration"}
               </button>
             )}
           </div>

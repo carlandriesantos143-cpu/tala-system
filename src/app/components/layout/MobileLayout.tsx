@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { HomeScreen } from "../../pages/resident/HomeScreen";
 import { TriageFlow } from "../../pages/resident/TriageFlow";
@@ -11,8 +11,19 @@ type MobileScreen = "home" | "triage" | "articles" | "contacts" | "emergency";
 
 export function MobileLayout() {
   const [screen, setScreen] = useState<MobileScreen>("home");
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
 
   const goToEmergency = () => setScreen("emergency");
 
@@ -88,10 +99,7 @@ export function MobileLayout() {
           </div>
         </button>
         
-        <button
-          onClick={() => setIsOnline(!isOnline)}
-          className="flex items-center gap-1.5 cursor-pointer"
-        >
+        <button className="flex items-center gap-1.5">
           {isOnline ? (
             <>
               <Wifi className="w-3.5 h-3.5 text-emerald-200" />

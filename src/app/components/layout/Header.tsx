@@ -30,10 +30,10 @@ export function Header({ title }: HeaderProps) {
           </div>
           <div className="leading-tight">
             <span className="text-gray-700 block" style={{ fontSize: "0.85rem" }}>
-              {user?.name || "BHW Admin"}
+              {(user && "name" in user && typeof user.name === "string" && user.name) || "BHW Admin"}
             </span>
             <span className="text-gray-400 block" style={{ fontSize: "0.68rem" }}>
-              {user?.role || "Admin"}
+              {(user && "role" in user && typeof user.role === "string" && user.role) || "Admin"}
             </span>
           </div>
         </div>

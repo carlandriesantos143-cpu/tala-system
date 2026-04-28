@@ -1,12 +1,7 @@
+import { useState, useEffect } from "react";
+import { supabase } from "../../utils/supabase/client";
 import { FileText, Phone, Bell, Activity, TrendingUp, ThermometerSun, HeartPulse, Stethoscope } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-
-const summaryCards = [
-  { label: "Total Articles", value: 24, icon: FileText, color: "emerald", change: "+3 this week" },
-  { label: "Total Contacts", value: 18, icon: Phone, color: "blue", change: "+1 this week" },
-  { label: "Active Alerts", value: 5, icon: Bell, color: "amber", change: "2 urgent" },
-  { label: "Triage Status", value: "Active", icon: Activity, color: "red", change: "All protocols set" },
-];
 
 const colorMap: Record<string, { bg: string; iconBg: string; text: string }> = {
   emerald: { bg: "bg-emerald-50", iconBg: "bg-emerald-100", text: "text-emerald-600" },
@@ -39,11 +34,54 @@ const recentActivity = [
 ];
 
 export function DashboardPage() {
+  // 1. Gawa tayo ng state para sa mga bibilangin natin
+  const [stats, setStats] = useState({
+    articles: 0,
+    contacts: 0,
+    alerts: 0,
+    isLoading: true
+  });
+
+  // 2. Kukunin natin ang bilang galing sa database pag-load ng page
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        // Gagamit tayo ng { count: 'exact', head: true } para bilang lang ang kunin, hindi yung buong data (mas mabilis ito!)
+        const [articlesRes, contactsRes, alertsRes] = await Promise.all([
+          supabase.from('health_articles').select('*', { count: 'exact', head: true }),
+          supabase.from('emergency_contacts').select('*', { count: 'exact', head: true }),
+          // Sa alerts, yung mga "Active" lang ang bibilangin natin
+          supabase.from('health_alerts').select('*', { count: 'exact', head: true }).eq('status', 'Active')
+        ]);
+
+        setStats({
+          articles: articlesRes.count || 0,
+          contacts: contactsRes.count || 0,
+          alerts: alertsRes.count || 0,
+          isLoading: false
+        });
+      } catch (error) {
+        console.error("Error fetching stats:", error);
+        setStats(prev => ({ ...prev, isLoading: false }));
+      }
+    };
+
+    fetchStats();
+  }, []);
+
+  // 3. Dynamic array na kumukuha sa 'stats' state natin
+  const dynamicSummaryCards = [
+    { label: "Total Articles", value: stats.isLoading ? "..." : stats.articles, icon: FileText, color: "emerald", change: "Updated real-time" },
+    { label: "Total Contacts", value: stats.isLoading ? "..." : stats.contacts, icon: Phone, color: "blue", change: "Directory count" },
+    { label: "Active Alerts", value: stats.isLoading ? "..." : stats.alerts, icon: Bell, color: "amber", change: "Urgent announcements" },
+    { label: "Triage Status", value: "Active", icon: Activity, color: "red", change: "System online" },
+  ];
+
   return (
     <div className="p-8 space-y-6 overflow-auto h-full bg-gray-50/50">
       {/* Summary Cards */}
       <div className="grid grid-cols-4 gap-5">
-        {summaryCards.map((card) => {
+        {dynamicSummaryCards.map((card, index) => {
           const Icon = card.icon;
           const colors = colorMap[card.color];
           return (

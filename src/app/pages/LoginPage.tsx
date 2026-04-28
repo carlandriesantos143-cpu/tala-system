@@ -11,7 +11,7 @@ import {
   Shield,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import logo from "@/assets/icons/StarIcon-green.svg";
+import logo from "../../../public/tala-logo.svg";
 
 export function LoginPage() {
   const navigate = useNavigate();

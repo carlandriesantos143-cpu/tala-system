@@ -25,34 +25,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Initial Auth Check (Optimistic UI for INSTANT Load)
-    const initAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
+  const initAuth = async () => {
+    try {
+      // 1. Setup ng 5-second timeout
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('session_timeout')), 5000)
+      );
+
+      // 2. Unahan sila: sinong unang matatapos, yun ang masusunod
+      const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+      
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          full_name: session.user.email?.split('@')[0] || 'BHW Admin',
+          email: session.user.email || '',
+          barangay: 'Loading...',
+          is_active: true,
+        });
         
-        if (session?.user) {
-          // OPTIMISTIC LOAD: Papasukin agad ang user gamit ang placeholder data
-          // para hindi siya ma-kick out habang naghihintay magising ang database!
-          setUser({
-            id: session.user.id,
-            full_name: session.user.email?.split('@')[0] || 'BHW Admin',
-            email: session.user.email || '',
-            barangay: 'Loading...',
-            is_active: true,
-          });
-          
-          setIsLoading(false); // Patayin agad ang loading screen (1 sec pasok agad!)
-          
-          // Kunin ang totoong profile sa background nang tahimik
-          await loadUserProfile(session.user.id);
-          return;
-        }
-      } catch (err) {
-        console.error("Auth init error:", err);
-      } finally {
-        setIsLoading(false);
+        setIsLoading(false); 
+        loadUserProfile(session.user.id); // Kunin ang profile sa background
+        return;
       }
-    };
+    } catch (err) {
+      console.error("Auth init error/timeout:", err);
+      // FALLBACK: Kapag mabagal ang DB, kunin natin yung naka-save na session sa browser!
+      const localSessionData = localStorage.getItem('tala-bhw-session');
+      if (localSessionData) {
+        try {
+          const parsed = JSON.parse(localSessionData);
+          if (parsed?.user) {
+            setUser({
+              id: parsed.user.id,
+              full_name: parsed.user.email?.split('@')[0] || 'BHW Admin',
+              email: parsed.user.email || '',
+              barangay: 'Offline Mode...',
+              is_active: true,
+            });
+          }
+        } catch (e) {
+          console.error("Parse error sa fallback:", e);
+        }
+      }
+    } finally {
+      setIsLoading(false); // Patayin ang loading screen kahit anong mangyari
+    }
+  };
     
     initAuth();
 
@@ -81,17 +101,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Fetch the BHW Admin profile (Walang strict timeout para iwas error sa Cold Start)
   const loadUserProfile = async (userId: string) => {
     try {
-      const { data, error } = await supabase
-          .from('bhw_users')
-          .select('*')
-          .eq('id', userId)
-          .single();
+      // Lagyan din natin ng 5-second timeout ang pag-fetch ng profile
+      const fetchPromise = supabase.from('bhw_users').select('*').eq('id', userId).single();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('profile_timeout')), 5000)
+      );
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
       if (!error && data) {
-        setUser(data as BHWUser); // I-update ang UI gamit ang totoong data kapag nakuha na
+        setUser(data as BHWUser); 
       }
     } catch (err) {
-      console.error("Background profile fetch error:", err);
+      console.error("Background profile fetch error or timeout:", err);
     }
   };
 

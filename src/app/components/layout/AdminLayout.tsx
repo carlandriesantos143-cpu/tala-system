@@ -24,7 +24,7 @@ export function AdminLayout() {
   const [activePage, setActivePage] = useState("dashboard");
 
   // 🚧 ADVANCEMENT BLOCKER🚧
-  const pagesUnderConstruction = ["dashboard","analytics","settings", "triage" ]; 
+  const pagesUnderConstruction = ["analytics"]; 
 
   const renderPage = () => {
     switch (activePage) {
