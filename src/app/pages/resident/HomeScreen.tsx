@@ -56,7 +56,6 @@ export function HomeScreen({
           style={{ fontSize: "1.5rem", fontWeight: 700 }}
         >
           <span>{greeting}!</span>
-          <Hand className="w-5 h-5" />
         </h1>
         <p className="text-gray-500 mt-1" style={{ fontSize: "0.85rem" }}>
           How can TALA help you today?

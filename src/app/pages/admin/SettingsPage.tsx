@@ -1,35 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/app/utils/supabase/client";
 import {
-  User,
-  Lock,
-  Building2,
-  MapPin,
-  Heart,
-  Wifi,
-  WifiOff,
-  RefreshCw,
-  CheckCircle2,
-  Trash2,
-  RotateCcw,
-  Info,
-  Save,
-  Edit2,
-  X,
-  Eye,
-  EyeOff,
-  AlertTriangle,
-  Shield,
-  Clock,
-  Database,
-  HardDrive,
-  ChevronRight,
-  XCircle,
-  ToggleLeft,
-  ToggleRight,
-  Zap,
-  CircleDot,
+  User, Lock, Building2, MapPin, Heart, Wifi, WifiOff, RefreshCw,
+  CheckCircle2, Trash2, Info, Save, Edit2, X, Eye, EyeOff,
+  AlertTriangle, Shield, Clock, Database, HardDrive, ChevronRight,
+  XCircle, ToggleLeft, ToggleRight, Zap, CircleDot, Bell 
 } from "lucide-react";
+
+import { db } from "../../services/localDB"; 
+import { fetchAndStore } from "../../services/syncService"; 
 
 interface AccountData {
   name: string;
@@ -45,8 +24,7 @@ interface SystemInfo {
   region: string;
 }
 
-// ─── SUB-COMPONENTS (defined OUTSIDE to prevent focus loss on re-render) ──────
-
+// ─── SUB-COMPONENTS ──────
 const Section = ({ children }: { children: React.ReactNode }) => (
   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
     {children}
@@ -54,15 +32,9 @@ const Section = ({ children }: { children: React.ReactNode }) => (
 );
 
 const SectionHeader = ({
-  icon: Icon,
-  title,
-  description,
-  action,
+  icon: Icon, title, description, action,
 }: {
-  icon: React.ElementType;
-  title: string;
-  description: string;
-  action?: React.ReactNode;
+  icon: React.ElementType; title: string; description: string; action?: React.ReactNode;
 }) => (
   <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
     <div className="flex items-center gap-3">
@@ -90,17 +62,9 @@ const Field = ({ label, value, isLoading }: { label: string; value: string; isLo
 );
 
 const InputField = ({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
+  label, value, onChange, placeholder, type = "text",
 }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
 }) => (
   <div>
     <label className="block text-gray-500 mb-1.5" style={{ fontSize: "0.78rem" }}>{label}</label>
@@ -115,15 +79,9 @@ const InputField = ({
   </div>
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 export function SettingsPage() {
   // Account
-  const [account, setAccount] = useState<AccountData>({
-    name: "BHW Admin",
-    email: "",
-    role: "BHW Admin",
-  });
+  const [account, setAccount] = useState<AccountData>({ name: "BHW Admin", email: "", role: "BHW Admin" });
   const [editingAccount, setEditingAccount] = useState(false);
   const [accountDraft, setAccountDraft] = useState(account);
   const [isSavingAccount, setIsSavingAccount] = useState(false);
@@ -138,11 +96,7 @@ export function SettingsPage() {
 
   // System info
   const [systemInfo, setSystemInfo] = useState<SystemInfo>({
-    barangay: "Barangay Malinta",
-    city: "Valenzuela City",
-    province: "Metro Manila",
-    healthCenter: "Malinta Health Center",
-    region: "NCR – National Capital Region",
+    barangay: "Barangay Malinta", city: "Valenzuela City", province: "Metro Manila", healthCenter: "Malinta Health Center", region: "NCR – National Capital Region",
   });
   const [editingSystem, setEditingSystem] = useState(false);
   const [systemDraft, setSystemDraft] = useState(systemInfo);
@@ -151,6 +105,17 @@ export function SettingsPage() {
   // Loading state
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+
+  // Sync & Cache States
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [autoSync, setAutoSync] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"idle" | "success" | "failed">("idle");
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  
+  const [cacheStats, setCacheStats] = useState({
+    size: "0 MB", articles: 0, alerts: 0, contacts: 0, triage: 0
+  });
 
   // ─── FETCH DATA FROM SUPABASE ON LOAD ───────────────────────
   useEffect(() => {
@@ -168,23 +133,17 @@ export function SettingsPage() {
           .eq("id", currentUserId)
           .single();
 
-        if (error) {
-          if (error.code !== "PGRST116") throw error;
-        } else if (data) {
+        if (error && error.code !== "PGRST116") throw error;
+        
+        if (data) {
           const fetchedAccount: AccountData = {
-            name: data.full_name || "BHW Admin",
-            email: data.email || session.user.email || "",
-            role: "BHW Admin",
+            name: data.full_name || "BHW Admin", email: data.email || session.user.email || "", role: "BHW Admin",
           };
           setAccount(fetchedAccount);
           setAccountDraft(fetchedAccount);
 
           const fetchedSystem: SystemInfo = {
-            barangay: data.barangay || "Barangay Malinta",
-            city: data.city || "Valenzuela City",
-            province: data.province || "Metro Manila",
-            healthCenter: data.health_center || "Malinta Health Center",
-            region: data.region || "NCR – National Capital Region",
+            barangay: data.barangay || "Barangay Malinta", city: data.city || "Valenzuela City", province: data.province || "Metro Manila", healthCenter: data.health_center || "Malinta Health Center", region: data.region || "NCR – National Capital Region",
           };
           setSystemInfo(fetchedSystem);
           setSystemDraft(fetchedSystem);
@@ -197,20 +156,34 @@ export function SettingsPage() {
     };
 
     fetchSettings();
+    loadCacheStats(); 
+    
+    const savedTime = localStorage.getItem("tala_last_sync");
+    if (savedTime) setLastSyncTime(new Date(savedTime));
   }, []);
 
-  // Offline & Sync
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [autoSync, setAutoSync] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<"idle" | "success" | "failed">("idle");
-  const [lastSyncTime] = useState(new Date(2026, 3, 17, 14, 34, 0));
-  const offlineDataSize = "24.3 MB";
-  const cachedArticles = 42;
-  const cachedProtocols = 4;
-  const cachedContacts = 8;
+  // ─── LOAD REAL DEXIE CACHE STATS ─────────────────────────────
+  const loadCacheStats = async () => {
+    try {
+      const articles = await db.articles.count();
+      const alerts = await db.alerts.count();
+      const contacts = await db.contacts.count();
+      const triage = await db.triageConfig.count();
 
-  // Sync online status with browser events
+      let sizeStr = "Unknown";
+      if (navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        if (estimate.usage) {
+          sizeStr = (estimate.usage / (1024 * 1024)).toFixed(2) + " MB";
+        }
+      }
+
+      setCacheStats({ size: sizeStr, articles, alerts, contacts, triage });
+    } catch (err) {
+      console.error("Failed to load cache stats", err);
+    }
+  };
+
   useEffect(() => {
     const goOnline = () => setIsOnline(true);
     const goOffline = () => setIsOnline(false);
@@ -222,26 +195,8 @@ export function SettingsPage() {
     };
   }, []);
 
-  const getRelativeTime = (date: Date) => {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return "Just now";
-    if (diffMin < 60) return `${diffMin} minute${diffMin > 1 ? "s" : ""} ago`;
-    const diffHrs = Math.floor(diffMin / 60);
-    if (diffHrs < 24) return `${diffHrs} hour${diffHrs > 1 ? "s" : ""} ago`;
-    const diffDays = Math.floor(diffHrs / 24);
-    return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
-  };
-
-  const formatTimestamp = (date: Date) =>
-    date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) +
-    " — " +
-    date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-
   // Modals
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "error">("success");
 
@@ -249,6 +204,47 @@ export function SettingsPage() {
     setToast(msg);
     setToastType(type);
     setTimeout(() => setToast(null), 3000);
+  };
+
+  // ─── TOTOONG SYNC BUTTON FUNCTION ────────────────────────────
+  const handleSync = async () => {
+    if (!isOnline) return;
+    setSyncing(true);
+    setSyncStatus("idle");
+
+    try {
+      await fetchAndStore();
+      
+      const now = new Date();
+      setLastSyncTime(now);
+      localStorage.setItem("tala_last_sync", now.toISOString());
+      
+      await loadCacheStats();
+      setSyncStatus("success");
+      showToast("Offline data synced successfully!");
+    } catch (error) {
+      setSyncStatus("failed");
+      showToast("Sync failed. Check your connection.", "error");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // ─── TOTOONG CLEAR CACHE FUNCTION ────────────────────────────
+  const handleClear = async () => {
+    try {
+      await Promise.all([
+        db.articles.clear(),
+        db.alerts.clear(),
+        db.contacts.clear(),
+        db.triageConfig.clear()
+      ]);
+      await loadCacheStats();
+      setShowClearConfirm(false);
+      showToast("Offline cache cleared successfully");
+    } catch (err) {
+      showToast("Failed to clear cache", "error");
+    }
   };
 
   // ─── SAVE ACCOUNT → SUPABASE ─────────────────────────────────
@@ -280,7 +276,6 @@ export function SettingsPage() {
     setIsSavingPassword(true);
 
     try {
-      // Supabase Auth: re-authenticate first via signInWithPassword
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user?.email) throw new Error("No active session.");
 
@@ -293,7 +288,6 @@ export function SettingsPage() {
         return;
       }
 
-      // Now update the password
       const { error: updateError } = await supabase.auth.updateUser({
         password: pwForm.newPw,
       });
@@ -341,37 +335,27 @@ export function SettingsPage() {
     }
   };
 
-  const handleSync = () => {
-    setSyncing(true);
-    setTimeout(() => {
-      setSyncing(false);
-      if (isOnline) {
-        setSyncStatus("success");
-        showToast("Offline data synced successfully");
-      } else {
-        setSyncStatus("failed");
-        showToast("Sync failed — no internet connection", "error");
-      }
-    }, 2000);
+  const getRelativeTime = (date: Date | null) => {
+    if (!date) return "Never synced";
+    const diffMin = Math.floor((new Date().getTime() - date.getTime()) / 60000);
+    if (diffMin < 1) return "Just now";
+    if (diffMin < 60) return `${diffMin} minute${diffMin > 1 ? "s" : ""} ago`;
+    const diffHrs = Math.floor(diffMin / 60);
+    if (diffHrs < 24) return `${diffHrs} hour${diffHrs > 1 ? "s" : ""} ago`;
+    const diffDays = Math.floor(diffHrs / 24);
+    return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
   };
 
-  const handleClear = () => {
-    setShowClearConfirm(false);
-    showToast("Offline cache cleared");
-  };
+  const formatTimestamp = (date: Date | null) =>
+    date ? date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) +
+    " — " + date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) : "No record";
 
-  const handleReset = () => {
-    setShowResetConfirm(false);
-    showToast("System reset to defaults");
-  };
-
-  // Sidebar nav items
   const sideNavItems = [
     { id: "account", label: "Account", icon: User },
     { id: "system", label: "System Info", icon: Building2 },
     { id: "offline", label: "Offline & Sync", icon: Wifi },
     { id: "data", label: "Data Management", icon: Database },
-    { id: "about", label: "About TALA", icon: Info },
+    { id: "about", label: "About TALA", icon: Info }, // 👈 Nandito sa menu
   ];
 
   const [activeSection, setActiveSection] = useState("account");
@@ -398,9 +382,7 @@ export function SettingsPage() {
                 key={item.id}
                 onClick={() => scrollTo(item.id)}
                 className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer ${
-                  isActive
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                  isActive ? "bg-emerald-50 text-emerald-700" : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -438,45 +420,18 @@ export function SettingsPage() {
               <div className="p-6">
                 {editingAccount ? (
                   <div className="space-y-4">
-                    <InputField
-                      label="Full Name"
-                      value={accountDraft.name}
-                      onChange={(v) => setAccountDraft({ ...accountDraft, name: v })}
-                    />
-                    <InputField
-                      label="Email Address"
-                      value={accountDraft.email}
-                      onChange={(v) => setAccountDraft({ ...accountDraft, email: v })}
-                    />
+                    <InputField label="Full Name" value={accountDraft.name} onChange={(v) => setAccountDraft({ ...accountDraft, name: v })} />
+                    <InputField label="Email Address" value={accountDraft.email} onChange={(v) => setAccountDraft({ ...accountDraft, email: v })} />
                     <div>
                       <label className="block text-gray-500 mb-1.5" style={{ fontSize: "0.78rem" }}>Role</label>
-                      <div
-                        className="px-4 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-gray-500"
-                        style={{ fontSize: "0.875rem" }}
-                      >
-                        {accountDraft.role}{" "}
-                        <span className="text-gray-400 ml-1" style={{ fontSize: "0.72rem" }}>(read-only)</span>
+                      <div className="px-4 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-gray-500" style={{ fontSize: "0.875rem" }}>
+                        {accountDraft.role} <span className="text-gray-400 ml-1" style={{ fontSize: "0.72rem" }}>(read-only)</span>
                       </div>
                     </div>
                     <div className="flex justify-end gap-3 pt-2">
-                      <button
-                        onClick={() => setEditingAccount(false)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 cursor-pointer"
-                        style={{ fontSize: "0.82rem" }}
-                      >
-                        <X className="w-3.5 h-3.5" /> Cancel
-                      </button>
-                      <button
-                        onClick={saveAccount}
-                        disabled={isSavingAccount}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                        style={{ fontSize: "0.82rem" }}
-                      >
-                        {isSavingAccount ? (
-                          <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving...</>
-                        ) : (
-                          <><Save className="w-3.5 h-3.5" /> Save</>
-                        )}
+                      <button onClick={() => setEditingAccount(false)} className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 cursor-pointer" style={{ fontSize: "0.82rem" }}><X className="w-3.5 h-3.5" /> Cancel</button>
+                      <button onClick={saveAccount} disabled={isSavingAccount} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed" style={{ fontSize: "0.82rem" }}>
+                        {isSavingAccount ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving...</> : <><Save className="w-3.5 h-3.5" /> Save</>}
                       </button>
                     </div>
                   </div>
@@ -610,53 +565,18 @@ export function SettingsPage() {
                 {editingSystem ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <InputField
-                        label="Barangay Name"
-                        value={systemDraft.barangay}
-                        onChange={(v) => setSystemDraft({ ...systemDraft, barangay: v })}
-                      />
-                      <InputField
-                        label="City / Municipality"
-                        value={systemDraft.city}
-                        onChange={(v) => setSystemDraft({ ...systemDraft, city: v })}
-                      />
+                      <InputField label="Barangay Name" value={systemDraft.barangay} onChange={(v) => setSystemDraft({ ...systemDraft, barangay: v })} />
+                      <InputField label="City / Municipality" value={systemDraft.city} onChange={(v) => setSystemDraft({ ...systemDraft, city: v })} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <InputField
-                        label="Province"
-                        value={systemDraft.province}
-                        onChange={(v) => setSystemDraft({ ...systemDraft, province: v })}
-                      />
-                      <InputField
-                        label="Region"
-                        value={systemDraft.region}
-                        onChange={(v) => setSystemDraft({ ...systemDraft, region: v })}
-                      />
+                      <InputField label="Province" value={systemDraft.province} onChange={(v) => setSystemDraft({ ...systemDraft, province: v })} />
+                      <InputField label="Region" value={systemDraft.region} onChange={(v) => setSystemDraft({ ...systemDraft, region: v })} />
                     </div>
-                    <InputField
-                      label="Health Center Name"
-                      value={systemDraft.healthCenter}
-                      onChange={(v) => setSystemDraft({ ...systemDraft, healthCenter: v })}
-                    />
+                    <InputField label="Health Center Name" value={systemDraft.healthCenter} onChange={(v) => setSystemDraft({ ...systemDraft, healthCenter: v })} />
                     <div className="flex justify-end gap-3 pt-2">
-                      <button
-                        onClick={() => setEditingSystem(false)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 cursor-pointer"
-                        style={{ fontSize: "0.82rem" }}
-                      >
-                        <X className="w-3.5 h-3.5" /> Cancel
-                      </button>
-                      <button
-                        onClick={saveSystem}
-                        disabled={isSavingSystem}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                        style={{ fontSize: "0.82rem" }}
-                      >
-                        {isSavingSystem ? (
-                          <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving...</>
-                        ) : (
-                          <><Save className="w-3.5 h-3.5" /> Save</>
-                        )}
+                      <button onClick={() => setEditingSystem(false)} className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 cursor-pointer" style={{ fontSize: "0.82rem" }}><X className="w-3.5 h-3.5" /> Cancel</button>
+                      <button onClick={saveSystem} disabled={isSavingSystem} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed" style={{ fontSize: "0.82rem" }}>
+                        {isSavingSystem ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving...</> : <><Save className="w-3.5 h-3.5" /> Save</>}
                       </button>
                     </div>
                   </div>
@@ -671,9 +591,7 @@ export function SettingsPage() {
                     <div className="pt-1 border-t border-gray-100">
                       <div className="flex items-center gap-2.5 mt-3">
                         <Heart className="w-4 h-4 text-emerald-500" />
-                        <span className="text-gray-700 font-medium" style={{ fontSize: "0.85rem" }}>
-                          {systemInfo.healthCenter}
-                        </span>
+                        <span className="text-gray-700 font-medium" style={{ fontSize: "0.85rem" }}>{systemInfo.healthCenter}</span>
                       </div>
                     </div>
                   </div>
@@ -694,46 +612,19 @@ export function SettingsPage() {
                   }`}
                 >
                   <div className={`p-2.5 rounded-lg ${isOnline ? "bg-emerald-200" : "bg-red-200"}`}>
-                    {isOnline ? (
-                      <Wifi className="w-4.5 h-4.5 text-emerald-700" />
-                    ) : (
-                      <WifiOff className="w-4.5 h-4.5 text-red-700" />
-                    )}
+                    {isOnline ? <Wifi className="w-4.5 h-4.5 text-emerald-700" /> : <WifiOff className="w-4.5 h-4.5 text-red-700" />}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          isOnline ? "bg-emerald-500 animate-pulse" : "bg-red-500"
-                        }`}
-                      />
-                      <p
-                        className={`font-semibold ${isOnline ? "text-emerald-800" : "text-red-800"}`}
-                        style={{ fontSize: "0.88rem" }}
-                      >
+                      <div className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
+                      <p className={`font-semibold ${isOnline ? "text-emerald-800" : "text-red-800"}`} style={{ fontSize: "0.88rem" }}>
                         {isOnline ? "Online" : "Offline"}
                       </p>
                     </div>
-                    <p
-                      className={`mt-0.5 ${isOnline ? "text-emerald-600" : "text-red-600"}`}
-                      style={{ fontSize: "0.72rem" }}
-                    >
-                      {isOnline
-                        ? "Connected — Auto sync enabled"
-                        : "No internet connection — Using local data"}
+                    <p className={`mt-0.5 ${isOnline ? "text-emerald-600" : "text-red-600"}`} style={{ fontSize: "0.72rem" }}>
+                      {isOnline ? "Connected — Ready to sync data" : "No internet connection — Using local data"}
                     </p>
                   </div>
-                  <button
-                    onClick={() => setIsOnline(!isOnline)}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-colors ${
-                      isOnline
-                        ? "bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                        : "bg-white border-red-200 text-red-700 hover:bg-red-100"
-                    }`}
-                    style={{ fontSize: "0.7rem" }}
-                  >
-                    {isOnline ? "Simulate Offline" : "Simulate Online"}
-                  </button>
                 </div>
 
                 {/* Sync controls row */}
@@ -755,7 +646,7 @@ export function SettingsPage() {
                         {syncing ? "Syncing..." : "Sync Now"}
                       </button>
                     </div>
-                    <p className="text-gray-400" style={{ fontSize: "0.7rem" }}>Fetch latest data from server</p>
+                    <p className="text-gray-400" style={{ fontSize: "0.7rem" }}>Fetch latest data from server to local database</p>
 
                     {syncStatus === "success" && !syncing && (
                       <div className="flex items-center gap-1.5 mt-2.5 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg">
@@ -766,13 +657,13 @@ export function SettingsPage() {
                     {syncStatus === "failed" && !syncing && (
                       <div className="flex items-center gap-1.5 mt-2.5 px-3 py-1.5 bg-red-50 border border-red-100 rounded-lg">
                         <XCircle className="w-3.5 h-3.5 text-red-600" />
-                        <span className="text-red-700" style={{ fontSize: "0.7rem", fontWeight: 500 }}>Sync failed — No internet</span>
+                        <span className="text-red-700" style={{ fontSize: "0.7rem", fontWeight: 500 }}>Sync failed</span>
                       </div>
                     )}
                     {!isOnline && syncStatus === "idle" && (
                       <div className="flex items-center gap-1.5 mt-2.5 px-3 py-1.5 bg-amber-50 border border-amber-100 rounded-lg">
                         <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                        <span className="text-amber-700" style={{ fontSize: "0.7rem", fontWeight: 500 }}>Sync unavailable while offline</span>
+                        <span className="text-amber-700" style={{ fontSize: "0.7rem", fontWeight: 500 }}>Unavailable offline</span>
                       </div>
                     )}
                   </div>
@@ -785,30 +676,15 @@ export function SettingsPage() {
                         <span className="text-gray-700 font-medium" style={{ fontSize: "0.85rem" }}>Auto Sync</span>
                       </div>
                       <button onClick={() => setAutoSync(!autoSync)} className="cursor-pointer">
-                        {autoSync ? (
-                          <ToggleRight className="w-8 h-8 text-emerald-500" />
-                        ) : (
-                          <ToggleLeft className="w-8 h-8 text-gray-300" />
-                        )}
+                        {autoSync ? <ToggleRight className="w-8 h-8 text-emerald-500" /> : <ToggleLeft className="w-8 h-8 text-gray-300" />}
                       </button>
                     </div>
                     <p className="text-gray-400" style={{ fontSize: "0.7rem" }}>
-                      {autoSync
-                        ? "System syncs automatically when online"
-                        : "Automatic syncing is disabled"}
+                      {autoSync ? "System syncs automatically when online" : "Automatic syncing is disabled"}
                     </p>
-                    <div
-                      className={`flex items-center gap-1.5 mt-2.5 px-3 py-1.5 rounded-lg ${
-                        autoSync
-                          ? "bg-emerald-50 border border-emerald-100"
-                          : "bg-gray-100 border border-gray-200"
-                      }`}
-                    >
+                    <div className={`flex items-center gap-1.5 mt-2.5 px-3 py-1.5 rounded-lg ${autoSync ? "bg-emerald-50 border border-emerald-100" : "bg-gray-100 border border-gray-200"}`}>
                       <CircleDot className={`w-3.5 h-3.5 ${autoSync ? "text-emerald-600" : "text-gray-400"}`} />
-                      <span
-                        className={`${autoSync ? "text-emerald-700" : "text-gray-500"}`}
-                        style={{ fontSize: "0.7rem", fontWeight: 500 }}
-                      >
+                      <span className={`${autoSync ? "text-emerald-700" : "text-gray-500"}`} style={{ fontSize: "0.7rem", fontWeight: 500 }}>
                         Auto Sync: {autoSync ? "Enabled" : "Disabled"}
                       </span>
                     </div>
@@ -830,14 +706,15 @@ export function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Cache stats grid */}
-                <p className="text-gray-500 font-medium mb-3" style={{ fontSize: "0.78rem" }}>Cached Data</p>
-                <div className="grid grid-cols-4 gap-3">
+                {/* REAL Cache stats grid */}
+                <p className="text-gray-500 font-medium mb-3" style={{ fontSize: "0.78rem" }}>Local Storage Usage</p>
+                <div className="grid grid-cols-5 gap-3">
                   {[
-                    { label: "Cache Size", value: offlineDataSize, icon: HardDrive, iconBg: "bg-violet-100", iconColor: "text-violet-600" },
-                    { label: "Articles", value: cachedArticles.toString(), icon: Database, iconBg: "bg-amber-100", iconColor: "text-amber-600" },
-                    { label: "Protocols", value: cachedProtocols.toString(), icon: Shield, iconBg: "bg-emerald-100", iconColor: "text-emerald-600" },
-                    { label: "Contacts", value: cachedContacts.toString(), icon: MapPin, iconBg: "bg-blue-100", iconColor: "text-blue-600" },
+                    { label: "Cache Size", value: cacheStats.size, icon: HardDrive, iconBg: "bg-gray-100", iconColor: "text-gray-600" },
+                    { label: "Articles", value: cacheStats.articles, icon: Database, iconBg: "bg-blue-100", iconColor: "text-blue-600" },
+                    { label: "Alerts", value: cacheStats.alerts, icon: Bell, iconBg: "bg-red-100", iconColor: "text-red-600" },
+                    { label: "Triage Config", value: cacheStats.triage, icon: Shield, iconBg: "bg-emerald-100", iconColor: "text-emerald-600" },
+                    { label: "Contacts", value: cacheStats.contacts, icon: MapPin, iconBg: "bg-amber-100", iconColor: "text-amber-600" },
                   ].map((stat) => {
                     const SIcon = stat.icon;
                     return (
@@ -846,7 +723,7 @@ export function SettingsPage() {
                           <SIcon className={`w-3.5 h-3.5 ${stat.iconColor}`} />
                         </div>
                         <p className="text-gray-800 font-bold" style={{ fontSize: "1rem" }}>{stat.value}</p>
-                        <p className="text-gray-400 mt-0.5" style={{ fontSize: "0.68rem" }}>{stat.label}</p>
+                        <p className="text-gray-400 mt-0.5" style={{ fontSize: "0.68rem", whiteSpace: "nowrap" }}>{stat.label}</p>
                       </div>
                     );
                   })}
@@ -858,9 +735,9 @@ export function SettingsPage() {
           {/* ── 4. Data Management ── */}
           <div id="settings-data">
             <Section>
-              <SectionHeader icon={Database} title="Data Management" description="Clear cache or reset the system to defaults" />
-              <div className="p-6 space-y-4">
-                {/* Clear offline data */}
+              <SectionHeader icon={Database} title="Data Management" description="Clear cached data from this device" />
+              <div className="p-6">
+                {/* Clear offline data ONLY */}
                 <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -880,50 +757,24 @@ export function SettingsPage() {
                       Clear Cache
                     </button>
                   </div>
-                  <p className="text-gray-400 mt-2.5 ml-14 pl-0.5" style={{ fontSize: "0.68rem" }}>
-                    Cached data will be re-downloaded automatically on the next sync when you're online.
-                  </p>
-                </div>
-
-                {/* Reset system */}
-                <div className="p-4 bg-red-50 rounded-xl border-2 border-red-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-red-100 p-2.5 rounded-lg">
-                        <AlertTriangle className="w-4 h-4 text-red-600" />
-                      </div>
-                      <div>
-                        <p className="text-red-700 font-semibold" style={{ fontSize: "0.85rem" }}>Reset System</p>
-                        <p className="text-red-500" style={{ fontSize: "0.72rem" }}>This action is permanent and cannot be reversed</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setShowResetConfirm(true)}
-                      className="px-4 py-2 text-white bg-red-500 border border-red-600 hover:bg-red-600 rounded-xl transition-colors cursor-pointer shrink-0 font-medium"
-                      style={{ fontSize: "0.82rem" }}
-                    >
-                      Reset System
-                    </button>
-                  </div>
-                  <div className="mt-3 ml-14 pl-0.5 flex items-start gap-2 bg-red-100/60 rounded-lg p-2.5">
-                    <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-                    <p className="text-red-600" style={{ fontSize: "0.68rem", lineHeight: 1.5 }}>
-                      This will remove all cached data and restore default settings. Your admin account will remain, but all local triage data, articles, contacts, and preferences will be permanently erased.
-                    </p>
-                  </div>
                 </div>
               </div>
             </Section>
           </div>
 
           {/* ── 5. About System ── */}
+          {/* 👈👈👈 NANDITO YUNG ABOUT TALA SECTION 👈👈👈 */}
           <div id="settings-about">
             <Section>
               <SectionHeader icon={Info} title="About TALA" description="System version and information" />
               <div className="p-6">
                 <div className="flex items-center gap-4 mb-5">
-                  <div className="w-14 h-14 rounded-2xl bg-emerald-600 flex items-center justify-center shadow-sm">
-                    <Heart className="w-7 h-7 text-white" />
+                  <div className="w-14 h-14 rounded-2xl bg-white-600 flex items-center justify-center shadow-sm overflow-hidden p-1.5">
+                    <img 
+                      src="/StarIcon-green.svg" 
+                      alt="TALA Logo" 
+                      className="w-full h-full object-contain"
+                    />
                   </div>
                   <div>
                     <h4 className="text-gray-800 font-bold" style={{ fontSize: "1.05rem" }}>TALA</h4>
@@ -933,8 +784,8 @@ export function SettingsPage() {
 
                 <div className="grid grid-cols-3 gap-4 mb-5">
                   {[
-                    { label: "Version", value: "1.0.0-beta" },
-                    { label: "Build", value: "2026.04.17" },
+                    // { label: "Version", value: "1.0.0-beta" },
+                    // { label: "Build", value: "2026.04.17" },
                     { label: "Environment", value: "Production" },
                   ].map((item) => (
                     <div key={item.label} className="bg-gray-50 rounded-xl p-3.5">
@@ -966,76 +817,18 @@ export function SettingsPage() {
 
       {/* ── Confirmation Modals ── */}
       {showClearConfirm && (
-        <div
-          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
-          onClick={() => setShowClearConfirm(false)}
-        >
-          <div
-            className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowClearConfirm(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
-              <div className="bg-amber-100 p-2.5 rounded-xl">
-                <AlertTriangle className="w-5 h-5 text-amber-600" />
-              </div>
+              <div className="bg-amber-100 p-2.5 rounded-xl"><AlertTriangle className="w-5 h-5 text-amber-600" /></div>
               <div>
                 <h4 className="text-gray-800 font-semibold" style={{ fontSize: "0.95rem" }}>Clear Offline Data?</h4>
-                <p className="text-gray-400 mt-0.5" style={{ fontSize: "0.75rem" }}>Cached content will need to re-download on next sync</p>
+                <p className="text-gray-400 mt-0.5" style={{ fontSize: "0.75rem" }}>Cached content will need to re-download</p>
               </div>
             </div>
             <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowClearConfirm(false)}
-                className="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 cursor-pointer"
-                style={{ fontSize: "0.85rem" }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleClear}
-                className="px-4 py-2.5 bg-amber-500 text-white rounded-xl hover:bg-amber-600 cursor-pointer"
-                style={{ fontSize: "0.85rem" }}
-              >
-                Clear Data
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showResetConfirm && (
-        <div
-          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
-          onClick={() => setShowResetConfirm(false)}
-        >
-          <div
-            className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="bg-red-100 p-2.5 rounded-xl">
-                <AlertTriangle className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <h4 className="text-gray-800 font-semibold" style={{ fontSize: "0.95rem" }}>Reset System?</h4>
-                <p className="text-gray-400 mt-0.5" style={{ fontSize: "0.75rem" }}>All settings will be restored to defaults. This cannot be undone.</p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowResetConfirm(false)}
-                className="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 cursor-pointer"
-                style={{ fontSize: "0.85rem" }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReset}
-                className="px-4 py-2.5 bg-red-500 text-white rounded-xl hover:bg-red-600 cursor-pointer"
-                style={{ fontSize: "0.85rem" }}
-              >
-                Reset System
-              </button>
+              <button onClick={() => setShowClearConfirm(false)} className="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-xl cursor-pointer" style={{ fontSize: "0.85rem" }}>Cancel</button>
+              <button onClick={handleClear} className="px-4 py-2.5 bg-amber-500 text-white rounded-xl cursor-pointer" style={{ fontSize: "0.85rem" }}>Clear Data</button>
             </div>
           </div>
         </div>
@@ -1043,15 +836,8 @@ export function SettingsPage() {
 
       {/* Toast */}
       {toast && (
-        <div
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-5 py-3 bg-gray-800 text-white rounded-xl shadow-lg animate-fade-in"
-          style={{ fontSize: "0.85rem" }}
-        >
-          {toastType === "success" ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 text-red-400" />
-          )}
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-5 py-3 bg-gray-800 text-white rounded-xl shadow-lg animate-fade-in" style={{ fontSize: "0.85rem" }}>
+          {toastType === "success" ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-red-400" />}
           {toast}
         </div>
       )}

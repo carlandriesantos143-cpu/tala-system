@@ -15,12 +15,12 @@ import {
   Phone,
   RotateCcw,
   Home,
+  FileQuestion,
 } from "lucide-react";
-import { initialData } from "../../triage/initialData";
-import type {
-  Urgency,
-  ResultConfig,
-} from "../../triage/types";
+
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "../../services/localDB"; 
+import type { Urgency, ResultConfig } from "../../triage/types";
 
 interface TriageFlowProps {
   onBack: () => void;
@@ -35,57 +35,59 @@ const resultStyles: Record<
   Urgency,
   { bg: string; text: string; border: string; icon: typeof CircleAlert; btnBg: string }
 > = {
-  Emergency: {
-    bg: "bg-red-50",
-    text: "text-red-700",
-    border: "border-red-200",
-    icon: CircleAlert,
-    btnBg: "bg-red-600",
-  },
-  Urgent: {
-    bg: "bg-orange-50",
-    text: "text-orange-700",
-    border: "border-orange-200",
-    icon: AlertTriangle,
-    btnBg: "bg-orange-600",
-  },
-  "Semi-Urgent": {
-    bg: "bg-amber-50",
-    text: "text-amber-700",
-    border: "border-amber-200",
-    icon: AlertTriangle,
-    btnBg: "bg-amber-600",
-  },
-  "Non-Urgent": {
-    bg: "bg-emerald-50",
-    text: "text-emerald-700",
-    border: "border-emerald-200",
-    icon: CircleCheck,
-    btnBg: "bg-emerald-600",
-  },
+  Emergency: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", icon: CircleAlert, btnBg: "bg-red-600" },
+  Urgent: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200", icon: AlertTriangle, btnBg: "bg-orange-600" },
+  "Semi-Urgent": { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", icon: AlertTriangle, btnBg: "bg-amber-600" },
+  "Non-Urgent": { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", icon: CircleCheck, btnBg: "bg-emerald-600" },
 };
 
 export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProps) {
-  const data = initialData;
-  const enabledAgeGroups = data.ageGroups.filter((a) => a.enabled);
-  const enabledUserTypes = data.userTypes.filter((u) => u.enabled);
+  const storedConfig = useLiveQuery(() => db.triageConfig.toArray());
+  const isLoading = storedConfig === undefined; 
+  
+  let data: any = null;
+  if (storedConfig && storedConfig.length > 0) {
+    const rawData = storedConfig[0].data;
+    data = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
+  }
 
+  // LAHAT NG HOOKS DAPAT NASA TAAS (Bago ang if-statements)
   const [step, setStep] = useState<Step>(1);
   const [agreed, setAgreed] = useState(false);
-
-  // Step 2
   const [selectedAge, setSelectedAge] = useState<number | null>(null);
   const [selectedUserType, setSelectedUserType] = useState<number | null>(null);
-
-  // Step 3
   const [checkedFlags, setCheckedFlags] = useState<Set<number>>(new Set());
-
-  // Step 4
   const [activeCluster, setActiveCluster] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<number, boolean>>({});
-
-  // Step 5
   const [finalResult, setFinalResult] = useState<ResultConfig | null>(null);
+
+  // INILIPAT SA TAAS: useCallback Hook
+  const determineResult = useCallback((): ResultConfig => {
+    let highestUrgency: Urgency = "Non-Urgent";
+    const urgencyRank: Record<Urgency, number> = {
+      Emergency: 4,
+      Urgent: 3,
+      "Semi-Urgent": 2,
+      "Non-Urgent": 1,
+    };
+
+    // Gumamit ng data?. para safe kahit null ang data sa unang render
+    for (const cluster of data?.symptomClusters || []) {
+      for (const q of cluster.questions || []) {
+        const answer = answers[q.id];
+        if (answer === undefined) continue;
+        const branch = (answer ? q.yesBranch : q.noBranch) as { urgency: Urgency };
+        if (urgencyRank[branch.urgency] > urgencyRank[highestUrgency]) {
+          highestUrgency = branch.urgency;
+        }
+      }
+    }
+
+    return (
+      data?.resultConfigs?.find((r: any) => r.urgency === highestUrgency) ||
+      data?.resultConfigs?.[data.resultConfigs.length - 1]
+    );
+  }, [answers, data]);
 
   const toggleFlag = (id: number) => {
     setCheckedFlags((prev) => {
@@ -96,60 +98,19 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
     });
   };
 
-  const stepLabels = [
-    "Disclaimer",
-    "Patient Info",
-    "Red Flags",
-    "Symptoms",
-    "Result",
-  ];
-
   const canNext = () => {
     switch (step) {
-      case 1:
-        return agreed;
-      case 2:
-        return selectedAge !== null && selectedUserType !== null;
-      case 3:
-        return true;
-      case 4:
-        return Object.keys(answers).length > 0;
-      default:
-        return false;
+      case 1: return agreed;
+      case 2: return selectedAge !== null && selectedUserType !== null;
+      case 3: return true;
+      case 4: return Object.keys(answers).length > 0;
+      default: return false;
     }
   };
 
-  const determineResult = useCallback((): ResultConfig => {
-    // Check answers for highest urgency
-    let highestUrgency: Urgency = "Non-Urgent";
-    const urgencyRank: Record<Urgency, number> = {
-      Emergency: 4,
-      Urgent: 3,
-      "Semi-Urgent": 2,
-      "Non-Urgent": 1,
-    };
-
-    for (const cluster of data.symptomClusters) {
-      for (const q of cluster.questions) {
-        const answer = answers[q.id];
-        if (answer === undefined) continue;
-        const branch = answer ? q.yesBranch : q.noBranch;
-        if (urgencyRank[branch.urgency] > urgencyRank[highestUrgency]) {
-          highestUrgency = branch.urgency;
-        }
-      }
-    }
-
-    return (
-      data.resultConfigs.find((r) => r.urgency === highestUrgency) ||
-      data.resultConfigs[data.resultConfigs.length - 1]
-    );
-  }, [answers, data]);
-
   const handleNext = () => {
     if (step === 3 && checkedFlags.size > 0) {
-      // Red flag triggered — go to emergency result
-      setFinalResult(data.resultConfigs.find((r) => r.urgency === "Emergency")!);
+      setFinalResult(data?.resultConfigs?.find((r: any) => r.urgency === "Emergency")!);
       setStep(5);
       return;
     }
@@ -179,6 +140,52 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
     setAnswers({});
     setFinalResult(null);
   };
+
+  // -----------------------------------------------------------------
+  // EARLY RETURNS (Dapat nasa HULI ng lahat ng hooks)
+  // -----------------------------------------------------------------
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-6 text-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600 mb-4"></div>
+        <p className="text-gray-500 text-sm">Naglo-load ng data...</p>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-6 text-center">
+        <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mb-4">
+          <FileQuestion className="w-10 h-10 text-gray-500" />
+        </div>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Hindi Pa Available</h2>
+        <p className="text-gray-500 text-sm mb-6 max-w-[280px]">
+          Ang Health Triage ay kasalukuyang inaayos pa ng inyong Barangay Health Center. Mangyaring sumubok muli mamaya.
+        </p>
+        <button
+          onClick={onBack}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-medium transition-colors cursor-pointer"
+        >
+          Bumalik sa Home
+        </button>
+      </div>
+    );
+  }
+
+  // -----------------------------------------------------------------
+  // NORMAL FLOW: Kung may data na ang Admin
+  // -----------------------------------------------------------------
+  const enabledAgeGroups = data.ageGroups?.filter((a: any) => a.enabled) || [];
+  const enabledUserTypes = data.userTypes?.filter((u: any) => u.enabled) || [];
+
+  const stepLabels = [
+    "Disclaimer",
+    "Patient Info",
+    "Red Flags",
+    "Symptoms",
+    "Result",
+  ];
 
   return (
     <div className="flex min-h-full flex-col bg-gray-50">
@@ -224,6 +231,7 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
 
       {/* Content */}
       <div className="mx-auto flex-1 w-full max-w-[430px] overflow-auto px-5 py-4">
+        
         {/* STEP 1 — Disclaimer */}
         {step === 1 && (
           <div className="space-y-5">
@@ -241,10 +249,10 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
 
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
               <p
-                className="text-amber-800 leading-relaxed"
+                className="text-amber-800 leading-relaxed whitespace-pre-line"
                 style={{ fontSize: "0.82rem" }}
               >
-                {data.disclaimer}
+                {data.disclaimer || "Walang disclaimer na nailagay ang admin."}
               </p>
             </div>
 
@@ -314,49 +322,53 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                 Age Group
               </p>
               <div className="grid grid-cols-2 gap-2.5">
-                {enabledAgeGroups.map((ag, i) => {
-                  const Icon = ageIcons[i] || User;
-                  const active = selectedAge === ag.id;
-                  return (
-                    <button
-                      key={ag.id}
-                      onClick={() => setSelectedAge(ag.id)}
-                      className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
-                        active
-                          ? "border-emerald-500 bg-emerald-50"
-                          : "border-gray-200 bg-white hover:border-gray-300"
-                      }`}
-                    >
-                      <div
-                        className={`p-2 rounded-xl ${
-                          active ? "bg-emerald-200" : "bg-gray-100"
+                {enabledAgeGroups.length > 0 ? (
+                  enabledAgeGroups.map((ag: any, i: number) => {
+                    const Icon = ageIcons[i] || User;
+                    const active = selectedAge === ag.id;
+                    return (
+                      <button
+                        key={ag.id}
+                        onClick={() => setSelectedAge(ag.id)}
+                        className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
+                          active
+                            ? "border-emerald-500 bg-emerald-50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
                         }`}
                       >
-                        <Icon
-                          className={`w-4 h-4 ${
-                            active ? "text-emerald-700" : "text-gray-500"
+                        <div
+                          className={`p-2 rounded-xl ${
+                            active ? "bg-emerald-200" : "bg-gray-100"
                           }`}
-                        />
-                      </div>
-                      <div className="text-left">
-                        <p
-                          className={`font-medium ${
-                            active ? "text-emerald-700" : "text-gray-700"
-                          }`}
-                          style={{ fontSize: "0.8rem" }}
                         >
-                          {ag.label}
-                        </p>
-                        <p
-                          className="text-gray-400"
-                          style={{ fontSize: "0.65rem" }}
-                        >
-                          {ag.rangeDesc}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
+                          <Icon
+                            className={`w-4 h-4 ${
+                              active ? "text-emerald-700" : "text-gray-500"
+                            }`}
+                          />
+                        </div>
+                        <div className="text-left">
+                          <p
+                            className={`font-medium ${
+                              active ? "text-emerald-700" : "text-gray-700"
+                            }`}
+                            style={{ fontSize: "0.8rem" }}
+                          >
+                            {ag.label}
+                          </p>
+                          <p
+                            className="text-gray-400"
+                            style={{ fontSize: "0.65rem" }}
+                          >
+                            {ag.rangeDesc}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="text-gray-400 text-sm">Walang age groups na na-set.</p>
+                )}
               </div>
             </div>
 
@@ -369,48 +381,52 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                 Who is using this tool?
               </p>
               <div className="space-y-2">
-                {enabledUserTypes.map((ut) => {
-                  const active = selectedUserType === ut.id;
-                  return (
-                    <button
-                      key={ut.id}
-                      onClick={() => setSelectedUserType(ut.id)}
-                      className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer ${
-                        active
-                          ? "border-emerald-500 bg-emerald-50"
-                          : "border-gray-200 bg-white hover:border-gray-300"
-                      }`}
-                    >
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                {enabledUserTypes.length > 0 ? (
+                  enabledUserTypes.map((ut: any) => {
+                    const active = selectedUserType === ut.id;
+                    return (
+                      <button
+                        key={ut.id}
+                        onClick={() => setSelectedUserType(ut.id)}
+                        className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer ${
                           active
-                            ? "border-emerald-500 bg-emerald-500"
-                            : "border-gray-300"
+                            ? "border-emerald-500 bg-emerald-50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
                         }`}
                       >
-                        {active && (
-                          <div className="w-2 h-2 bg-white rounded-full" />
-                        )}
-                      </div>
-                      <div className="text-left">
-                        <p
-                          className={`font-medium ${
-                            active ? "text-emerald-700" : "text-gray-700"
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                            active
+                              ? "border-emerald-500 bg-emerald-500"
+                              : "border-gray-300"
                           }`}
-                          style={{ fontSize: "0.82rem" }}
                         >
-                          {ut.label}
-                        </p>
-                        <p
-                          className="text-gray-400"
-                          style={{ fontSize: "0.68rem" }}
-                        >
-                          {ut.description}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
+                          {active && (
+                            <div className="w-2 h-2 bg-white rounded-full" />
+                          )}
+                        </div>
+                        <div className="text-left">
+                          <p
+                            className={`font-medium ${
+                              active ? "text-emerald-700" : "text-gray-700"
+                            }`}
+                            style={{ fontSize: "0.82rem" }}
+                          >
+                            {ut.label}
+                          </p>
+                          <p
+                            className="text-gray-400"
+                            style={{ fontSize: "0.68rem" }}
+                          >
+                            {ut.description}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="text-gray-400 text-sm">Walang user types na na-set.</p>
+                )}
               </div>
             </div>
           </div>
@@ -450,52 +466,56 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
             )}
 
             <div className="space-y-2">
-              {data.redFlags.map((flag) => {
-                const checked = checkedFlags.has(flag.id);
-                return (
-                  <button
-                    key={flag.id}
-                    onClick={() => toggleFlag(flag.id)}
-                    className={`w-full flex items-start gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer text-left ${
-                      checked
-                        ? "border-red-400 bg-red-50"
-                        : "border-gray-200 bg-white hover:border-gray-300"
-                    }`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
-                        checked ? "bg-red-500" : "bg-gray-200"
+              {data.redFlags?.length > 0 ? (
+                data.redFlags.map((flag: any) => {
+                  const checked = checkedFlags.has(flag.id);
+                  return (
+                    <button
+                      key={flag.id}
+                      onClick={() => toggleFlag(flag.id)}
+                      className={`w-full flex items-start gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer text-left ${
+                        checked
+                          ? "border-red-400 bg-red-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
                       }`}
                     >
-                      {checked && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                      )}
-                    </div>
-                    <div>
-                      <p
-                        className={`font-medium ${
-                          checked ? "text-red-700" : "text-gray-700"
+                      <div
+                        className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
+                          checked ? "bg-red-500" : "bg-gray-200"
                         }`}
-                        style={{ fontSize: "0.82rem" }}
                       >
-                        {flag.symptom}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span
-                          className={`px-1.5 py-0.5 rounded-md ${
-                            flag.severity === "Critical"
-                              ? "bg-red-100 text-red-600"
-                              : "bg-orange-100 text-orange-600"
-                          }`}
-                          style={{ fontSize: "0.6rem", fontWeight: 600 }}
-                        >
-                          {flag.severity}
-                        </span>
+                        {checked && (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                        )}
                       </div>
-                    </div>
-                  </button>
-                );
-              })}
+                      <div>
+                        <p
+                          className={`font-medium ${
+                            checked ? "text-red-700" : "text-gray-700"
+                          }`}
+                          style={{ fontSize: "0.82rem" }}
+                        >
+                          {flag.symptom}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span
+                            className={`px-1.5 py-0.5 rounded-md ${
+                              flag.severity === "Critical"
+                                ? "bg-red-100 text-red-600"
+                                : "bg-orange-100 text-orange-600"
+                            }`}
+                            style={{ fontSize: "0.6rem", fontWeight: 600 }}
+                          >
+                            {flag.severity}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="text-gray-400 text-sm text-center py-4">Walang nakalagay na red flags ang admin.</p>
+              )}
             </div>
 
             {checkedFlags.size === 0 && (
@@ -527,10 +547,10 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
 
             {/* Cluster tabs */}
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {data.symptomClusters.map((cluster) => {
+              {data.symptomClusters?.map((cluster: any) => {
                 const active = activeCluster === cluster.id;
                 const answered = cluster.questions.some(
-                  (q) => answers[q.id] !== undefined
+                  (q: any) => answers[q.id] !== undefined
                 );
                 return (
                   <button
@@ -560,8 +580,8 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
             {activeCluster ? (
               <div className="space-y-3">
                 {data.symptomClusters
-                  .find((c) => c.id === activeCluster)
-                  ?.questions.map((q) => {
+                  ?.find((c: any) => c.id === activeCluster)
+                  ?.questions.map((q: any) => {
                     const answer = answers[q.id];
                     return (
                       <div
@@ -656,7 +676,7 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
 
         {/* STEP 5 — Result */}
         {step === 5 && finalResult && (() => {
-          const style = resultStyles[finalResult.urgency];
+          const style = resultStyles[finalResult.urgency as Urgency] || resultStyles["Non-Urgent"];
           const ResultIcon = style.icon;
           return (
             <div className="space-y-5">
@@ -693,7 +713,7 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                     What to do
                   </p>
                   <p
-                    className="text-gray-700 leading-relaxed"
+                    className="text-gray-700 leading-relaxed whitespace-pre-line"
                     style={{ fontSize: "0.85rem" }}
                   >
                     {finalResult.defaultAction}
@@ -707,7 +727,7 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                     If condition worsens
                   </p>
                   <p
-                    className="text-gray-600 leading-relaxed"
+                    className="text-gray-600 leading-relaxed whitespace-pre-line"
                     style={{ fontSize: "0.82rem" }}
                   >
                     {finalResult.escalationNote}
@@ -726,8 +746,8 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                   </p>
                   <ul className="space-y-1.5">
                     {data.redFlags
-                      .filter((f) => checkedFlags.has(f.id))
-                      .map((f) => (
+                      ?.filter((f: any) => checkedFlags.has(f.id))
+                      .map((f: any) => (
                         <li
                           key={f.id}
                           className="flex items-start gap-2"

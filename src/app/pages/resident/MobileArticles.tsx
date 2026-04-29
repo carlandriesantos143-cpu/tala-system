@@ -9,12 +9,17 @@ import {
   Clock,
 } from "lucide-react";
 
+// Mga bagong imports para sa Offline DB
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "../../services/localDB";
+
 interface MobileArticlesProps {
   onBack: () => void;
 }
 
+// Updated interface para tumugma sa Dexie DB natin
 interface Article {
-  id: number;
+  id: string;
   title: string;
   category: string;
   summary: string;
@@ -23,246 +28,193 @@ interface Article {
   readTime: string;
 }
 
-const articles: Article[] = [
-  {
-    id: 1,
-    title: "Dengue Prevention Tips",
-    category: "Prevention",
-    summary: "Simple steps to protect your family from dengue fever.",
-    content:
-      "Dengue fever is spread by Aedes mosquitoes. Remove stagnant water from around your home — check flower pots, tires, gutters, and water containers. Use mosquito nets and repellent, especially during dawn and dusk. Wear long sleeves when possible. If you have fever with body pain and rash, visit your health center immediately. Early detection saves lives.",
-    date: "Apr 15, 2026",
-    readTime: "3 min",
-  },
-  {
-    id: 2,
-    title: "First Aid for Burns",
-    category: "First Aid",
-    summary: "How to safely treat minor burns at home.",
-    content:
-      "For minor burns: Cool the burn under clean running water for at least 10 minutes. Do NOT apply ice, butter, or toothpaste. Cover loosely with a sterile bandage. Take paracetamol for pain. For burns larger than your palm, with blisters, or on the face/hands/joints — go to the hospital. For chemical or electrical burns, always seek emergency care.",
-    date: "Apr 14, 2026",
-    readTime: "4 min",
-  },
-  {
-    id: 3,
-    title: "Nutrition for Children",
-    category: "Nutrition",
-    summary: "Essential nutrients for healthy growing kids.",
-    content:
-      "Children need balanced meals with protein (fish, eggs, beans), carbohydrates (rice, bread), and vitamins from fruits and vegetables. Iron-rich foods like liver and green leafy vegetables prevent anemia. Vitamin A from yellow and orange vegetables supports immunity. Encourage breastfeeding for the first 6 months. Avoid sugary drinks and processed snacks.",
-    date: "Apr 12, 2026",
-    readTime: "5 min",
-  },
-  {
-    id: 4,
-    title: "Measles Vaccination Guide",
-    category: "Vaccination",
-    summary: "When and where to get measles vaccines for children.",
-    content:
-      "The measles vaccine is given at 9 months and again at 12 months as part of the National Immunization Program. It's free at all health centers. Measles is highly contagious and can cause serious complications. Symptoms include high fever, cough, rash, and red eyes. If your child has these symptoms, visit the nearest health facility.",
-    date: "Apr 10, 2026",
-    readTime: "3 min",
-  },
-  {
-    id: 5,
-    title: "Managing Hypertension",
-    category: "Chronic Care",
-    summary: "Daily tips for controlling high blood pressure.",
-    content:
-      "High blood pressure usually has no symptoms but can lead to stroke and heart attack. Monitor your BP regularly. Reduce salt and fatty foods. Exercise for at least 30 minutes daily. Take your maintenance medication as prescribed — do not stop even if you feel fine. Avoid alcohol and smoking. Regular checkups at your health center are important.",
-    date: "Apr 8, 2026",
-    readTime: "4 min",
-  },
-  {
-    id: 6,
-    title: "Safe Drinking Water",
-    category: "Prevention",
-    summary: "How to make sure your water is safe to drink.",
-    content:
-      "Boil water for at least 1 minute to kill bacteria and parasites. Store clean water in covered containers. Never drink from rivers or streams without treatment. If you have access to chlorine tablets, use as directed. Signs of waterborne illness include diarrhea, vomiting, and stomach cramps — seek medical help if symptoms are severe.",
-    date: "Apr 5, 2026",
-    readTime: "3 min",
-  },
-  {
-    id: 7,
-    title: "Prenatal Care Basics",
-    category: "Maternal Health",
-    summary: "Essential care for expecting mothers.",
-    content:
-      "Visit your health center as soon as you know you're pregnant. At least 4 prenatal visits are recommended. Take iron and folic acid supplements daily. Eat nutritious foods and rest well. Watch for danger signs: vaginal bleeding, severe headache, blurred vision, or swelling. If any occur, go to the hospital immediately. Plan your birth with a skilled attendant.",
-    date: "Apr 3, 2026",
-    readTime: "5 min",
-  },
-  {
-    id: 8,
-    title: "TB Awareness",
-    category: "Prevention",
-    summary: "Recognizing signs of tuberculosis early.",
-    content:
-      "Tuberculosis (TB) is caused by bacteria spread through the air. Symptoms include cough lasting more than 2 weeks, blood in sputum, weight loss, night sweats, and fever. TB is curable with 6 months of treatment. Free treatment is available at DOH-accredited health facilities. If you or someone you know has a persistent cough, get tested immediately.",
-    date: "Apr 1, 2026",
-    readTime: "4 min",
-  },
-];
-
-const categories = [
-  "All",
-  "Prevention",
-  "First Aid",
-  "Nutrition",
-  "Vaccination",
-  "Chronic Care",
-  "Maternal Health",
-];
-
-const categoryColors: Record<string, { bg: string; text: string }> = {
-  Prevention: { bg: "bg-emerald-100", text: "text-emerald-700" },
-  "First Aid": { bg: "bg-red-100", text: "text-red-700" },
-  Nutrition: { bg: "bg-orange-100", text: "text-orange-700" },
-  Vaccination: { bg: "bg-blue-100", text: "text-blue-700" },
-  "Chronic Care": { bg: "bg-violet-100", text: "text-violet-700" },
-  "Maternal Health": { bg: "bg-pink-100", text: "text-pink-700" },
-};
-
 export function MobileArticles({ onBack }: MobileArticlesProps) {
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All");
+  // 1. Kumuha ng articles galing sa lokal na bodega (Dexie)
+  const rawArticles = useLiveQuery(() => db.articles.toArray(), []) || [];
+
+  // 2. I-filter ang mga "Published" o "Active" na articles, tapos i-convert sa UI format
+  const articles: Article[] = rawArticles
+    .filter(
+      (a) =>
+        a.status.toLowerCase() === "published" ||
+        a.status.toLowerCase() === "active"
+    )
+    .map((a) => ({
+      id: a.id,
+      title: a.title,
+      category: a.category || "General",
+      // Awtomatikong kumukuha ng unang 90 letters para sa summary
+      summary: a.content
+        ? a.content.substring(0, 90) + "..."
+        : "Walang karagdagang detalye.",
+      content: a.content,
+      // Pormat ng petsa (e.g., Apr 15, 2026)
+      date: new Date(a.created_at || Date.now()).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+      // Awtomatikong nagko-compute ng read time (assuming 200 words per minute ang bilis magbasa)
+      readTime: a.content
+        ? Math.max(1, Math.ceil(a.content.split(" ").length / 200)) + " min"
+        : "1 min",
+    }));
+
+  // 3. Awtomatikong kunin ang mga unique na categories mula sa published articles
+  const categories = [
+    "All",
+    ...Array.from(new Set(articles.map((a) => a.category))),
+  ];
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
 
-  const filtered = articles.filter((a) => {
-    const matchSearch = a.title.toLowerCase().includes(search.toLowerCase());
-    const matchCategory = category === "All" || a.category === category;
-    return matchSearch && matchCategory;
+  const filtered = articles.filter((article) => {
+    const matchesSearch =
+      article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      article.content.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory =
+      selectedCategory === "All" || article.category === selectedCategory;
+    return matchesSearch && matchesCategory;
   });
 
-  if (selectedArticle) {
-    const colors = categoryColors[selectedArticle.category] || {
-      bg: "bg-gray-100",
-      text: "text-gray-700",
+  const getCategoryColors = (category: string) => {
+    const colors: Record<string, { bg: string; text: string }> = {
+      Prevention: { bg: "bg-emerald-100", text: "text-emerald-700" },
+      "First Aid": { bg: "bg-red-100", text: "text-red-700" },
+      Nutrition: { bg: "bg-orange-100", text: "text-orange-700" },
+      Chronic: { bg: "bg-blue-100", text: "text-blue-700" },
     };
+    return colors[category] || { bg: "bg-gray-100", text: "text-gray-700" };
+  };
+
+  // Article Reader View (Modal)
+  if (selectedArticle) {
+    const colors = getCategoryColors(selectedArticle.category);
     return (
-      <div className="min-h-full bg-gray-50">
-        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
-          <div className="mx-auto flex w-full max-w-[430px] items-center gap-3">
+      <div className="flex min-h-full flex-col bg-white animate-in slide-in-from-right-2 duration-200">
+        <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 py-3 flex items-center justify-between shrink-0">
+          <button
+            onClick={() => setSelectedArticle(null)}
+            className="p-2 -ml-2 rounded-xl hover:bg-gray-50 text-gray-500 cursor-pointer flex items-center gap-2"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="font-medium" style={{ fontSize: "0.85rem" }}>
+              Back
+            </span>
+          </button>
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              aria-label="Go back"
-              onClick={() => setSelectedArticle(null)}
-              className="p-2 -ml-2 rounded-xl hover:bg-gray-100 cursor-pointer"
+              aria-label="Open article options"
+              className="p-2 -mr-2 rounded-xl hover:bg-gray-50 text-gray-400 cursor-pointer"
             >
-              <ArrowLeft className="w-5 h-5 text-gray-600" />
+              <BookOpen className="w-5 h-5" />
             </button>
-            <p
-              className="truncate text-gray-800 font-semibold"
-              style={{ fontSize: "0.9rem" }}
-            >
-              {selectedArticle.title}
-            </p>
           </div>
         </div>
-        <div className="mx-auto w-full max-w-[430px] px-5 py-5 pb-8">
-          <div className="flex items-center gap-2 mb-3">
+
+        <div className="mx-auto w-full max-w-[430px] p-5 pb-24">
+          <div className="mb-6">
             <span
-              className={`px-2.5 py-1 rounded-lg ${colors.bg} ${colors.text}`}
-              style={{ fontSize: "0.68rem", fontWeight: 600 }}
+              className={`inline-block px-2.5 py-1 rounded-lg ${colors.bg} ${colors.text} mb-3`}
+              style={{ fontSize: "0.7rem", fontWeight: 600 }}
             >
               {selectedArticle.category}
             </span>
-            <span className="flex items-center gap-1 text-gray-400" style={{ fontSize: "0.68rem" }}>
-              <Clock className="w-3 h-3" />
-              {selectedArticle.readTime} read
-            </span>
+            <h1
+              className="text-gray-900 leading-tight mb-3"
+              style={{ fontSize: "1.4rem", fontWeight: 800 }}
+            >
+              {selectedArticle.title}
+            </h1>
+            <div className="flex items-center gap-4 text-gray-400">
+              <span style={{ fontSize: "0.75rem" }}>
+                {selectedArticle.date}
+              </span>
+              <div className="w-1 h-1 rounded-full bg-gray-300" />
+              <span
+                className="flex items-center gap-1.5"
+                style={{ fontSize: "0.75rem" }}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                {selectedArticle.readTime} read
+              </span>
+            </div>
           </div>
-          <h1
-            className="text-gray-800 mb-2"
-            style={{ fontSize: "1.25rem", fontWeight: 700 }}
+
+          <div
+            className="prose prose-sm prose-emerald max-w-none text-gray-700 leading-relaxed"
+            style={{ fontSize: "0.9rem" }}
           >
-            {selectedArticle.title}
-          </h1>
-          <p className="text-gray-400 mb-5" style={{ fontSize: "0.75rem" }}>
-            {selectedArticle.date}
-          </p>
-          <p
-            className="text-gray-600 leading-relaxed"
-            style={{ fontSize: "0.9rem", lineHeight: 1.8 }}
-          >
-            {selectedArticle.content}
-          </p>
-          <div className="mt-6 bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
-            <p className="text-emerald-700" style={{ fontSize: "0.78rem" }}>
-              <strong>Tip:</strong> Share this article with your family and
-              neighbors to spread awareness in your community.
-            </p>
+            <p className="whitespace-pre-line">{selectedArticle.content}</p>
           </div>
         </div>
       </div>
     );
   }
 
+  // Main List View
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="flex min-h-full flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
-        <div className="mx-auto flex w-full max-w-[430px] items-center gap-3">
+      <div className="bg-white border-b border-gray-200 px-4 py-3 shrink-0">
+        <div className="mx-auto flex w-full max-w-[430px] items-center gap-3 mb-3">
           <button
             type="button"
-            aria-label="Go back"
             onClick={onBack}
+            aria-label="Go back"
+            title="Go back"
             className="p-2 -ml-2 rounded-xl hover:bg-gray-100 cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
-          <div className="flex-1">
-            <p
-              className="text-gray-800 font-semibold"
-              style={{ fontSize: "0.95rem" }}
-            >
-              Health Articles
-            </p>
-            <p className="text-gray-400" style={{ fontSize: "0.68rem" }}>
-              {filtered.length} articles available
-            </p>
-          </div>
+          <p
+            className="text-gray-800 font-semibold"
+            style={{ fontSize: "0.95rem" }}
+          >
+            Health Articles
+          </p>
         </div>
-      </div>
 
-      <div className="mx-auto w-full max-w-[430px] space-y-4 px-5 py-4 pb-24">
-        {/* Search */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
+        {/* Search bar */}
+        <div className="mx-auto w-full max-w-[430px] relative">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search articles..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search articles, symptoms..."
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-10 py-2.5 text-gray-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
             style={{ fontSize: "0.85rem" }}
           />
-          {search && (
+          {searchQuery && (
             <button
               type="button"
               aria-label="Clear search"
-              onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
+      </div>
 
-        {/* Category filter */}
-        <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="mx-auto flex-1 w-full max-w-[430px] overflow-auto px-4 py-4 space-y-4">
+        {/* Dynamic Categories */}
+        <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar -mx-4 px-4">
           {categories.map((cat) => (
             <button
               key={cat}
-              onClick={() => setCategory(cat)}
-              className={`px-3.5 py-2 rounded-xl whitespace-nowrap transition-colors cursor-pointer ${
-                category === cat
-                  ? "bg-emerald-600 text-white"
-                  : "bg-white text-gray-500 border border-gray-200"
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors cursor-pointer border ${
+                selectedCategory === cat
+                  ? "bg-emerald-600 text-white border-emerald-600"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
               }`}
-              style={{ fontSize: "0.75rem", fontWeight: 500 }}
+              style={{ fontSize: "0.78rem", fontWeight: 500 }}
             >
               {cat}
             </button>
@@ -272,29 +224,23 @@ export function MobileArticles({ onBack }: MobileArticlesProps) {
         {/* Article list */}
         <div className="space-y-3">
           {filtered.map((article) => {
-            const colors = categoryColors[article.category] || {
-              bg: "bg-gray-100",
-              text: "text-gray-700",
-            };
+            const colors = getCategoryColors(article.category);
             return (
               <button
                 key={article.id}
                 onClick={() => setSelectedArticle(article)}
-                className="w-full bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer text-left"
+                className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-left hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer group"
               >
-                <div className="flex items-start gap-3">
-                  <div className="bg-emerald-100 p-2.5 rounded-xl shrink-0">
-                    <BookOpen className="w-4 h-4 text-emerald-600" />
-                  </div>
+                <div className="flex gap-4">
                   <div className="flex-1 min-w-0">
-                    <p
-                      className="text-gray-800 font-medium"
-                      style={{ fontSize: "0.88rem" }}
+                    <h3
+                      className="text-gray-900 font-bold mb-1.5 leading-tight group-hover:text-emerald-700 transition-colors"
+                      style={{ fontSize: "0.95rem" }}
                     >
                       {article.title}
-                    </p>
+                    </h3>
                     <p
-                      className="text-gray-400 mt-1 line-clamp-2"
+                      className="text-gray-500 line-clamp-2 leading-relaxed"
                       style={{ fontSize: "0.75rem" }}
                     >
                       {article.summary}
@@ -329,7 +275,9 @@ export function MobileArticles({ onBack }: MobileArticlesProps) {
               No articles found
             </p>
             <p className="text-gray-400 mt-1" style={{ fontSize: "0.72rem" }}>
-              Try a different search term or category
+              {searchQuery || selectedCategory !== "All"
+                ? "Try a different search term or category"
+                : "Walang pang nai-publish na article ang BHW."}
             </p>
           </div>
         )}

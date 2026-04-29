@@ -24,7 +24,7 @@ export function AdminLayout() {
   const [activePage, setActivePage] = useState("dashboard");
 
   // 🚧 ADVANCEMENT BLOCKER🚧
-  const pagesUnderConstruction = ["analytics"]; 
+  const pagesUnderConstruction = ["analytics", "dashboard"]; 
 
   const renderPage = () => {
     switch (activePage) {
@@ -52,7 +52,7 @@ export function AdminLayout() {
       <Sidebar active={activePage} onNavigate={setActivePage} />
       
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header title={pageTitles[activePage] || "TALA Admin"} />
+        <Header title={pageTitles[activePage] || "TALA Admin"} onNavigate={setActivePage} />
         
         <main className="flex-1 overflow-hidden">
           {/* Dito tinitignan kung kasali sa listahan ang pinindot na page */}
