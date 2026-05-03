@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../../services/localDB"; 
+import { db } from "../../services/localDB";
 import type { Urgency, ResultConfig } from "../../triage/types";
 
 interface TriageFlowProps {
@@ -31,20 +31,68 @@ type Step = 1 | 2 | 3 | 4 | 5;
 
 const ageIcons = [Baby, Baby, User, User, User, Users, Users];
 
-const resultStyles: Record<
-  Urgency,
-  { bg: string; text: string; border: string; icon: typeof CircleAlert; btnBg: string }
-> = {
-  Emergency: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", icon: CircleAlert, btnBg: "bg-red-600" },
-  Urgent: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200", icon: AlertTriangle, btnBg: "bg-orange-600" },
-  "Semi-Urgent": { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", icon: AlertTriangle, btnBg: "bg-amber-600" },
-  "Non-Urgent": { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", icon: CircleCheck, btnBg: "bg-emerald-600" },
+const CHARCOAL = "#1E293B";
+const MUTED = "#64748B";
+const SUBTLE = "#94A3B8";
+const EMERALD = "#10B981";
+const EMERALD_DARK = "#059669";
+
+const glass: React.CSSProperties = {
+  background: "rgba(255, 255, 255, 0.70)",
+  backdropFilter: "blur(40px) saturate(160%)",
+  WebkitBackdropFilter: "blur(40px) saturate(160%)",
+  border: "1px solid #E2E8F0",
+  boxShadow: "0 6px 24px rgba(15, 23, 42, 0.06)",
+  borderRadius: 24,
 };
 
-export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProps) {
+const resultStyles: Record<
+  Urgency,
+  {
+    bg: string;
+    text: string;
+    border: string;
+    icon: typeof CircleAlert;
+    btnBg: string;
+  }
+> = {
+  Emergency: {
+    bg: "bg-red-50",
+    text: "text-red-700",
+    border: "border-red-200",
+    icon: CircleAlert,
+    btnBg: "bg-red-600",
+  },
+  Urgent: {
+    bg: "bg-orange-50",
+    text: "text-orange-700",
+    border: "border-orange-200",
+    icon: AlertTriangle,
+    btnBg: "bg-orange-600",
+  },
+  "Semi-Urgent": {
+    bg: "bg-amber-50",
+    text: "text-amber-700",
+    border: "border-amber-200",
+    icon: AlertTriangle,
+    btnBg: "bg-amber-600",
+  },
+  "Non-Urgent": {
+    bg: "bg-emerald-50",
+    text: "text-emerald-700",
+    border: "border-emerald-200",
+    icon: CircleCheck,
+    btnBg: "bg-emerald-600",
+  },
+};
+
+export function TriageFlow({
+  onBack,
+  onEmergency: _onEmergency,
+}: TriageFlowProps) {
   const storedConfig = useLiveQuery(() => db.triageConfig.toArray());
-  const isLoading = storedConfig === undefined; 
-  
+  const isLoading = storedConfig === undefined;
+
   let data: any = null;
   if (storedConfig && storedConfig.length > 0) {
     const rawData = storedConfig[0].data;
@@ -76,7 +124,9 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
       for (const q of cluster.questions || []) {
         const answer = answers[q.id];
         if (answer === undefined) continue;
-        const branch = (answer ? q.yesBranch : q.noBranch) as { urgency: Urgency };
+        const branch = (answer ? q.yesBranch : q.noBranch) as {
+          urgency: Urgency;
+        };
         if (urgencyRank[branch.urgency] > urgencyRank[highestUrgency]) {
           highestUrgency = branch.urgency;
         }
@@ -100,17 +150,24 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
 
   const canNext = () => {
     switch (step) {
-      case 1: return agreed;
-      case 2: return selectedAge !== null && selectedUserType !== null;
-      case 3: return true;
-      case 4: return Object.keys(answers).length > 0;
-      default: return false;
+      case 1:
+        return agreed;
+      case 2:
+        return selectedAge !== null && selectedUserType !== null;
+      case 3:
+        return true;
+      case 4:
+        return Object.keys(answers).length > 0;
+      default:
+        return false;
     }
   };
 
   const handleNext = () => {
     if (step === 3 && checkedFlags.size > 0) {
-      setFinalResult(data?.resultConfigs?.find((r: any) => r.urgency === "Emergency")!);
+      setFinalResult(
+        data?.resultConfigs?.find((r: any) => r.urgency === "Emergency")!,
+      );
       setStep(5);
       return;
     }
@@ -159,9 +216,12 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
         <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mb-4">
           <FileQuestion className="w-10 h-10 text-gray-500" />
         </div>
-        <h2 className="text-xl font-bold text-gray-800 mb-2">Hindi Pa Available</h2>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">
+          Hindi Pa Available
+        </h2>
         <p className="text-gray-500 text-sm mb-6 max-w-[280px]">
-          Ang Health Triage ay kasalukuyang inaayos pa ng inyong Barangay Health Center. Mangyaring sumubok muli mamaya.
+          Ang Health Triage ay kasalukuyang inaayos pa ng inyong Barangay Health
+          Center. Mangyaring sumubok muli mamaya.
         </p>
         <button
           onClick={onBack}
@@ -190,16 +250,22 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
   return (
     <div className="flex min-h-full flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shrink-0">
+      <div
+        className="px-4 py-3 flex items-center gap-3 shrink-0 mx-4 mt-4"
+        style={{ ...glass, borderRadius: 20 }}
+      >
         <div className="mx-auto flex w-full max-w-[430px] items-center gap-3">
           <button
-            type="button"
             onClick={step === 5 ? onBack : handlePrev}
-            className="p-2 -ml-2 rounded-xl hover:bg-gray-100 cursor-pointer"
             aria-label="Go back"
             title="Go back"
+            className="p-2 -ml-1 rounded-xl cursor-pointer"
+            style={{
+              background: "rgba(255,255,255,0.6)",
+              border: "1px solid #E2E8F0",
+            }}
           >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
+            <ArrowLeft className="w-4 h-4" style={{ color: CHARCOAL }} />
           </button>
           <div className="flex-1">
             <p
@@ -213,6 +279,19 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
             </p>
           </div>
         </div>
+        <span
+          className="px-2.5 py-1 rounded-full"
+          style={{
+            background: "rgba(16,185,129,0.10)",
+            border: "1px solid rgba(16,185,129,0.28)",
+            color: EMERALD_DARK,
+            fontSize: "0.65rem",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+          }}
+        >
+          {step}/5
+        </span>
       </div>
 
       {/* Step progress */}
@@ -231,7 +310,6 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
 
       {/* Content */}
       <div className="mx-auto flex-1 w-full max-w-[430px] overflow-auto px-5 py-4">
-        
         {/* STEP 1 — Disclaimer */}
         {step === 1 && (
           <div className="space-y-5">
@@ -367,7 +445,9 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                     );
                   })
                 ) : (
-                  <p className="text-gray-400 text-sm">Walang age groups na na-set.</p>
+                  <p className="text-gray-400 text-sm">
+                    Walang age groups na na-set.
+                  </p>
                 )}
               </div>
             </div>
@@ -425,7 +505,9 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                     );
                   })
                 ) : (
-                  <p className="text-gray-400 text-sm">Walang user types na na-set.</p>
+                  <p className="text-gray-400 text-sm">
+                    Walang user types na na-set.
+                  </p>
                 )}
               </div>
             </div>
@@ -514,7 +596,9 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                   );
                 })
               ) : (
-                <p className="text-gray-400 text-sm text-center py-4">Walang nakalagay na red flags ang admin.</p>
+                <p className="text-gray-400 text-sm text-center py-4">
+                  Walang nakalagay na red flags ang admin.
+                </p>
               )}
             </div>
 
@@ -550,20 +634,18 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
               {data.symptomClusters?.map((cluster: any) => {
                 const active = activeCluster === cluster.id;
                 const answered = cluster.questions.some(
-                  (q: any) => answers[q.id] !== undefined
+                  (q: any) => answers[q.id] !== undefined,
                 );
                 return (
                   <button
                     key={cluster.id}
-                    onClick={() =>
-                      setActiveCluster(active ? null : cluster.id)
-                    }
+                    onClick={() => setActiveCluster(active ? null : cluster.id)}
                     className={`px-4 py-2.5 rounded-xl whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
                       active
                         ? "bg-emerald-600 text-white"
                         : answered
-                        ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                        : "bg-white text-gray-600 border border-gray-200"
+                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                          : "bg-white text-gray-600 border border-gray-200"
                     }`}
                     style={{ fontSize: "0.78rem", fontWeight: 500 }}
                   >
@@ -636,10 +718,8 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                               }`}
                               style={{ fontSize: "0.72rem" }}
                             >
+                              {answer ? q.yesBranch.label : q.noBranch.label} (
                               {answer
-                                ? q.yesBranch.label
-                                : q.noBranch.label}{" "}
-                              ({answer
                                 ? q.yesBranch.urgency
                                 : q.noBranch.urgency}
                               )
@@ -650,9 +730,7 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                               }`}
                               style={{ fontSize: "0.7rem" }}
                             >
-                              {answer
-                                ? q.yesBranch.action
-                                : q.noBranch.action}
+                              {answer ? q.yesBranch.action : q.noBranch.action}
                             </p>
                           </div>
                         )}
@@ -666,7 +744,10 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                 <p className="text-gray-500" style={{ fontSize: "0.82rem" }}>
                   Select a symptom category above
                 </p>
-                <p className="text-gray-400 mt-1" style={{ fontSize: "0.7rem" }}>
+                <p
+                  className="text-gray-400 mt-1"
+                  style={{ fontSize: "0.7rem" }}
+                >
                   Answer the questions to get guidance
                 </p>
               </div>
@@ -675,137 +756,146 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
         )}
 
         {/* STEP 5 — Result */}
-        {step === 5 && finalResult && (() => {
-          const style = resultStyles[finalResult.urgency as Urgency] || resultStyles["Non-Urgent"];
-          const ResultIcon = style.icon;
-          return (
-            <div className="space-y-5">
-              {/* Result card */}
-              <div
-                className={`${style.bg} ${style.border} border-2 rounded-2xl p-6 text-center`}
-              >
+        {step === 5 &&
+          finalResult &&
+          (() => {
+            const style =
+              resultStyles[finalResult.urgency as Urgency] ||
+              resultStyles["Non-Urgent"];
+            const ResultIcon = style.icon;
+            return (
+              <div className="space-y-5">
+                {/* Result card */}
                 <div
-                  className={`w-16 h-16 ${style.btnBg} rounded-2xl flex items-center justify-center mx-auto mb-4`}
+                  className={`${style.bg} ${style.border} border-2 rounded-2xl p-6 text-center`}
                 >
-                  <ResultIcon className="w-8 h-8 text-white" />
-                </div>
-                <h2
-                  className={`${style.text}`}
-                  style={{ fontSize: "1.2rem", fontWeight: 800 }}
-                >
-                  {finalResult.title}
-                </h2>
-                <p
-                  className={`${style.text} mt-2 opacity-80`}
-                  style={{ fontSize: "0.82rem" }}
-                >
-                  {finalResult.description}
-                </p>
-              </div>
-
-              {/* Instructions */}
-              <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
-                <div>
-                  <p
-                    className="text-gray-500 font-semibold mb-2"
-                    style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.05em" }}
+                  <div
+                    className={`w-16 h-16 ${style.btnBg} rounded-2xl flex items-center justify-center mx-auto mb-4`}
                   >
-                    What to do
-                  </p>
+                    <ResultIcon className="w-8 h-8 text-white" />
+                  </div>
+                  <h2
+                    className={`${style.text}`}
+                    style={{ fontSize: "1.2rem", fontWeight: 800 }}
+                  >
+                    {finalResult.title}
+                  </h2>
                   <p
-                    className="text-gray-700 leading-relaxed whitespace-pre-line"
+                    className={`${style.text} mt-2 opacity-80`}
+                    style={{ fontSize: "0.82rem" }}
+                  >
+                    {finalResult.description}
+                  </p>
+                </div>
+
+                {/* Instructions */}
+                <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+                  <div>
+                    <p
+                      className="text-gray-500 font-semibold mb-2"
+                      style={{
+                        fontSize: "0.72rem",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                      }}
+                    >
+                      What to do
+                    </p>
+                    <p
+                      className="text-gray-700 leading-relaxed whitespace-pre-line"
+                      style={{ fontSize: "0.85rem" }}
+                    >
+                      {finalResult.defaultAction}
+                    </p>
+                  </div>
+                  <div className="border-t border-gray-100 pt-3">
+                    <p
+                      className="text-gray-500 font-semibold mb-2"
+                      style={{
+                        fontSize: "0.72rem",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                      }}
+                    >
+                      If condition worsens
+                    </p>
+                    <p
+                      className="text-gray-600 leading-relaxed whitespace-pre-line"
+                      style={{ fontSize: "0.82rem" }}
+                    >
+                      {finalResult.escalationNote}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Red flags found */}
+                {checkedFlags.size > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+                    <p
+                      className="text-red-700 font-semibold mb-2"
+                      style={{ fontSize: "0.82rem" }}
+                    >
+                      Red Flags Detected:
+                    </p>
+                    <ul className="space-y-1.5">
+                      {data.redFlags
+                        ?.filter((f: any) => checkedFlags.has(f.id))
+                        .map((f: any) => (
+                          <li key={f.id} className="flex items-start gap-2">
+                            <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                            <span
+                              className="text-red-700"
+                              style={{ fontSize: "0.78rem" }}
+                            >
+                              {f.symptom}
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="space-y-2.5">
+                  {(finalResult.urgency === "Emergency" ||
+                    finalResult.urgency === "Urgent") && (
+                    <a
+                      href="tel:117"
+                      className={`w-full ${style.btnBg} text-white rounded-2xl p-4 flex items-center justify-center gap-2 font-semibold`}
+                      style={{ fontSize: "0.9rem" }}
+                    >
+                      <Phone className="w-5 h-5" />
+                      Call Emergency Services (117)
+                    </a>
+                  )}
+                  <button
+                    onClick={restartTriage}
+                    className="w-full bg-gray-100 text-gray-600 rounded-2xl p-4 flex items-center justify-center gap-2 font-medium cursor-pointer hover:bg-gray-200 transition-colors"
                     style={{ fontSize: "0.85rem" }}
                   >
-                    {finalResult.defaultAction}
-                  </p>
-                </div>
-                <div className="border-t border-gray-100 pt-3">
-                  <p
-                    className="text-gray-500 font-semibold mb-2"
-                    style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.05em" }}
+                    <RotateCcw className="w-4 h-4" />
+                    Start New Assessment
+                  </button>
+                  <button
+                    onClick={onBack}
+                    className="w-full bg-white border border-gray-200 text-gray-600 rounded-2xl p-4 flex items-center justify-center gap-2 font-medium cursor-pointer hover:bg-gray-50 transition-colors"
+                    style={{ fontSize: "0.85rem" }}
                   >
-                    If condition worsens
-                  </p>
-                  <p
-                    className="text-gray-600 leading-relaxed whitespace-pre-line"
-                    style={{ fontSize: "0.82rem" }}
-                  >
-                    {finalResult.escalationNote}
-                  </p>
+                    <Home className="w-4 h-4" />
+                    Go Home
+                  </button>
                 </div>
-              </div>
 
-              {/* Red flags found */}
-              {checkedFlags.size > 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-                  <p
-                    className="text-red-700 font-semibold mb-2"
-                    style={{ fontSize: "0.82rem" }}
-                  >
-                    Red Flags Detected:
-                  </p>
-                  <ul className="space-y-1.5">
-                    {data.redFlags
-                      ?.filter((f: any) => checkedFlags.has(f.id))
-                      .map((f: any) => (
-                        <li
-                          key={f.id}
-                          className="flex items-start gap-2"
-                        >
-                          <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-                          <span
-                            className="text-red-700"
-                            style={{ fontSize: "0.78rem" }}
-                          >
-                            {f.symptom}
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="space-y-2.5">
-                {(finalResult.urgency === "Emergency" ||
-                  finalResult.urgency === "Urgent") && (
-                  <a
-                    href="tel:117"
-                    className={`w-full ${style.btnBg} text-white rounded-2xl p-4 flex items-center justify-center gap-2 font-semibold`}
-                    style={{ fontSize: "0.9rem" }}
-                  >
-                    <Phone className="w-5 h-5" />
-                    Call Emergency Services (117)
-                  </a>
-                )}
-                <button
-                  onClick={restartTriage}
-                  className="w-full bg-gray-100 text-gray-600 rounded-2xl p-4 flex items-center justify-center gap-2 font-medium cursor-pointer hover:bg-gray-200 transition-colors"
-                  style={{ fontSize: "0.85rem" }}
+                <p
+                  className="text-center text-gray-300"
+                  style={{ fontSize: "0.65rem" }}
                 >
-                  <RotateCcw className="w-4 h-4" />
-                  Start New Assessment
-                </button>
-                <button
-                  onClick={onBack}
-                  className="w-full bg-white border border-gray-200 text-gray-600 rounded-2xl p-4 flex items-center justify-center gap-2 font-medium cursor-pointer hover:bg-gray-50 transition-colors"
-                  style={{ fontSize: "0.85rem" }}
-                >
-                  <Home className="w-4 h-4" />
-                  Go Home
-                </button>
+                  This result is for guidance only and does not constitute a
+                  medical diagnosis
+                </p>
               </div>
-
-              <p
-                className="text-center text-gray-300"
-                style={{ fontSize: "0.65rem" }}
-              >
-                This result is for guidance only and does not constitute a
-                medical diagnosis
-              </p>
-            </div>
-          );
-        })()}
+            );
+          })()}
       </div>
 
       {/* Bottom action bar (not on step 5) */}
@@ -819,8 +909,8 @@ export function TriageFlow({ onBack, onEmergency: _onEmergency }: TriageFlowProp
                 step === 3 && checkedFlags.size > 0
                   ? "bg-red-600 hover:bg-red-700 text-white"
                   : canNext()
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
               }`}
               style={{ fontSize: "0.9rem" }}
             >

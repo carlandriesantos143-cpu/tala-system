@@ -5,9 +5,20 @@ import { TriageFlow } from "../../pages/resident/TriageFlow";
 import { EmergencyScreen } from "../../pages/resident/EmergencyScreen";
 import { MobileArticles } from "../../pages/resident/MobileArticles";
 import { MobileContacts } from "../../pages/resident/MobileContacts";
-import { Home, Activity, FileText, Phone, Wifi, WifiOff } from "lucide-react";
+import {
+  Home,
+  Activity,
+  FileText,
+  Phone,
+  Wifi,
+  WifiOff,
+  Sparkles,
+} from "lucide-react";
 
 type MobileScreen = "home" | "triage" | "articles" | "contacts" | "emergency";
+
+const CHARCOAL = "#1E293B";
+const EMERALD = "#10B981";
 
 export function MobileLayout() {
   const [screen, setScreen] = useState<MobileScreen>("home");
@@ -60,73 +71,156 @@ export function MobileLayout() {
   const showNav = screen !== "triage" && screen !== "emergency";
 
   return (
-    <div className="h-dvh max-h-dvh overflow-hidden bg-gray-50 flex flex-col font-['Inter'] max-w-[480px] mx-auto">
+    <div
+      className="h-full flex flex-col overflow-hidden relative"
+      style={{
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        maxWidth: 480,
+        margin: "0 auto",
+        backgroundColor: "#F8FAFC",
+      }}
+    >
+      {/* Soft organic teal blobs in far corners only */}
+      <div
+        aria-hidden
+        className="absolute pointer-events-none"
+        style={{
+          top: -120,
+          left: -120,
+          width: 320,
+          height: 320,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(16,185,129,0.22) 0%, rgba(16,185,129,0) 70%)",
+          filter: "blur(20px)",
+        }}
+      />
+
       {/* Status bar */}
-      <div className="bg-emerald-600 px-4 py-2 flex items-center justify-between">
+      <div
+        className="absolute top-0 left-0 right-0 z-30 px-6 py-4 flex items-center justify-between"
+        style={{
+          background: "rgba(255, 255, 255, 0.7)",
+          backdropFilter: "blur(40px) saturate(160%)",
+          WebkitBackdropFilter: "blur(40px) saturate(160%)",
+          borderBottomLeftRadius: 24,
+          borderBottomRightRadius: 24,
+          border: "1px solid rgba(226, 232, 240, 0.9)",
+          borderTop: "none",
+          boxShadow: "0 6px 24px rgba(15, 23, 42, 0.06)",
+        }}
+      >
         <button
-          type="button"
           onClick={() => navigate("/")}
-          className="cursor-pointer"
-          aria-label="Go to home"
-          title="Go to home"
+          className="flex items-center gap-2.5 cursor-pointer"
         >
+          <div
+            className="flex items-center justify-center"
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 9,
+              background: EMERALD,
+              boxShadow: "0 4px 12px rgba(16,185,129,0.35)",
+            }}
+          >
+            <Sparkles className="w-4 h-4 text-white" strokeWidth={2.4} />
+          </div>
           <div className="flex items-center gap-1.5">
-            <span className="flex items-center justify-center leading-none">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
-                viewBox="0 0 18 18"
-                fill="none"
-                className="block"
-              >
-                <path
-                  d="M9 0C9.36 7.2 10.8 8.64 18 9C10.8 9.36 9.36 10.8 9 18C8.64 10.8 7.2 9.36 0 9C7.2 8.64 8.64 7.2 9 0Z"
-                  fill="white"
-                />
-              </svg>
-            </span>
             <span
-              className="text-white leading-none"
               style={{
-                fontSize: "0.95rem",
-                letterSpacing: "0.04em",
-                fontFamily: "Inter",
+                fontFamily: "'Plus Jakarta Sans', sans-serif",
+                fontWeight: 700,
+                fontSize: "1.05rem",
+                letterSpacing: "0.12em",
+                color: CHARCOAL,
               }}
             >
               TALA
             </span>
           </div>
         </button>
-        
-        <button className="flex items-center gap-1.5">
+
+        <section
+          className="flex items-center gap-2 cursor-pointer px-3 py-1.5"
+          style={{
+            background: "rgba(255,255,255,0.8)",
+            border: "1px solid #E2E8F0",
+            borderRadius: 999,
+          }}
+        >
+          <span></span>
           {isOnline ? (
             <>
-              <Wifi className="w-3.5 h-3.5 text-emerald-200" />
               <span
-                className="text-emerald-200"
-                style={{ fontSize: "0.65rem" }}
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 999,
+                  background: EMERALD,
+                  boxShadow: "0 0 8px rgba(16,185,129,0.7)",
+                }}
+              />
+              <Wifi
+                className="w-3.5 h-3.5"
+                style={{ color: EMERALD }}
+                strokeWidth={2.4}
+              />
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  fontWeight: 600,
+                  color: CHARCOAL,
+                }}
               >
                 Online
               </span>
             </>
           ) : (
             <>
-              <WifiOff className="w-3.5 h-3.5 text-amber-300" />
-              <span className="text-amber-300" style={{ fontSize: "0.65rem" }}>
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 999,
+                  background: "#94A3B8",
+                }}
+              />
+              <WifiOff
+                className="w-3.5 h-3.5"
+                style={{ color: "#64748B" }}
+                strokeWidth={2.4}
+              />
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  fontWeight: 600,
+                  color: "#64748B",
+                }}
+              >
                 Offline
               </span>
             </>
           )}
-        </button>
+        </section>
       </div>
 
       {/* Screen content */}
-      <div className="flex-1 min-h-0 overflow-y-auto">{renderScreen()}</div>
+      <div className="flex-1 overflow-auto min-h-0" style={{ paddingTop: 72 }}>
+        {renderScreen()}
+      </div>
 
       {/* Bottom navigation */}
       {showNav && (
-        <nav className="sticky bottom-0 z-10 bg-white border-t border-gray-200 px-2 py-2 flex items-center justify-around shrink-0">
+        <nav
+          className="px-3 py-2.5 flex items-center justify-around shrink-0 z-30"
+          style={{
+            background: "rgba(255,255,255,0.7)",
+            backdropFilter: "blur(40px) saturate(160%)",
+            WebkitBackdropFilter: "blur(40px) saturate(160%)",
+            borderTop: "1px solid #E2E8F0",
+          }}
+        >
           {[
             { id: "home" as MobileScreen, label: "Home", icon: Home },
             { id: "triage" as MobileScreen, label: "Triage", icon: Activity },
@@ -143,15 +237,28 @@ export function MobileLayout() {
               <button
                 key={tab.id}
                 onClick={() => setScreen(tab.id)}
-                className={`flex flex-col items-center gap-1 px-4 py-1.5 rounded-xl transition-colors cursor-pointer ${
-                  isActive ? "text-emerald-600" : "text-gray-400"
-                }`}
+                className="flex flex-col items-center gap-1 px-4 py-1.5 rounded-2xl transition-all cursor-pointer"
+                style={{
+                  background: isActive
+                    ? "rgba(16,185,129,0.10)"
+                    : "transparent",
+                  border: isActive
+                    ? "1px solid rgba(16,185,129,0.28)"
+                    : "1px solid transparent",
+                }}
               >
-                <Icon className="w-5 h-5" />
+                <Icon
+                  className="w-5 h-5"
+                  style={{
+                    color: isActive ? EMERALD : "#94A3B8",
+                  }}
+                  strokeWidth={isActive ? 2.4 : 2}
+                />
                 <span
                   style={{
                     fontSize: "0.65rem",
-                    fontWeight: isActive ? 600 : 400,
+                    fontWeight: isActive ? 700 : 500,
+                    color: isActive ? EMERALD : "#64748B",
                   }}
                 >
                   {tab.label}
