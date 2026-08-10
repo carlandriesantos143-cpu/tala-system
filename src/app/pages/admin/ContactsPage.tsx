@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Search, Edit2, Trash2, X, Phone, MapPin, Building2, Loader2 } from "lucide-react";
 import { supabase } from "@/app/utils/supabase/client";
+import { toast } from "sonner";
 
 interface Contact {
   id: string; 
@@ -51,6 +52,9 @@ export function ContactsPage() {
       
     if (!error && data) {
       setContacts(data as Contact[]);
+    } else if (error) {
+      console.error("Error loading contacts:", error);
+      toast.error("Failed to load contacts. Check your connection.");
     }
     setLoading(false);
   };
@@ -70,31 +74,37 @@ export function ContactsPage() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.phone.trim()) return;
+    if (!form.name.trim() || !form.phone.trim()) {
+      toast.error("Name and phone number are required.");
+      return;
+    }
     setSaving(true);
-    
-    if (editingId) {
-      const { error } = await supabase.from('emergency_contacts').update(form).eq('id', editingId);
-      if (!error) {
-        await fetchContacts();
-        setShowModal(false);
-      }
+
+    const { error } = editingId
+      ? await supabase.from('emergency_contacts').update(form).eq('id', editingId)
+      : await supabase.from('emergency_contacts').insert([form]);
+
+    if (error) {
+      console.error("Error saving contact:", error);
+      toast.error(`Failed to save contact: ${error.message}`);
     } else {
-      const { error } = await supabase.from('emergency_contacts').insert([form]);
-      if (!error) {
-        await fetchContacts();
-        setShowModal(false);
-      }
+      await fetchContacts();
+      setShowModal(false);
+      toast.success(editingId ? "Contact updated." : "Contact added.");
     }
     setSaving(false);
   };
 
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from('emergency_contacts').delete().eq('id', id);
-    if (!error) {
+    if (error) {
+      console.error("Error deleting contact:", error);
+      toast.error(`Failed to delete contact: ${error.message}`);
+    } else {
       await fetchContacts();
+      toast.success("Contact deleted.");
     }
-    setDeleteConfirm(null); 
+    setDeleteConfirm(null);
   };
 
   const activeCount = contacts.filter((c) => c.status === "Active").length;

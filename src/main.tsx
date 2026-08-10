@@ -1,29 +1,29 @@
+import { createRoot } from "react-dom/client";
+import App from "./app/App.tsx";
+import "./styles/index.css";
+import { fetchAndStore, selfRepair } from "./app/services/syncService";
 
-  import { createRoot } from "react-dom/client";
-  import App from "./app/App.tsx";
-  import "./styles/index.css";
-  import { fetchAndStore, selfRepair } from "./app/services/syncService";
+// 1. I-render ang React App
+createRoot(document.getElementById("root")!).render(<App />);
 
-  // 1. I-render ang React App mo (Ito yung original na code mo)
-  createRoot(document.getElementById("root")!).render(<App />);
+// --- OFFLINE-FIRST AT SELF-REPAIR LOGIC ---
 
-  // --- SIMULA NG OFFLINE-FIRST AT SELF-REPAIR LOGIC ---
+// Auto-sync preference (itinatakda sa Settings → Offline & Sync).
+// Default ay naka-ON; kapag "false", hindi awtomatikong magsi-sync.
+const autoSyncEnabled = () => localStorage.getItem("tala_auto_sync") !== "false";
 
-  // 2. Initial Sync: Kumuha ng data kung may internet pagbukas ng app [cite: 130, 131]
-  if (navigator.onLine) {
-    fetchAndStore();
-  }
+// 2. Initial Sync: kumuha ng data kung may internet pagbukas ng app
+if (autoSyncEnabled() && navigator.onLine) {
+  fetchAndStore();
+}
 
-  // 3. Self-Repair: Kapag nawalan ng internet tapos bumalik, mag-sync ulit [cite: 133, 134, 136]
-  window.addEventListener("online", () => {
-    console.log("[TALA] Back online — running self-repair...");
-    selfRepair();
-  });
+// 3. Self-Repair: kapag bumalik ang internet, mag-sync ulit (kung naka-ON ang auto-sync)
+window.addEventListener("online", () => {
+  if (!autoSyncEnabled()) return;
+  selfRepair();
+});
 
-  // 4. Persistent Storage: Para hindi basta-basta burahin ni Google Chrome/Browser yung data natin [cite: 138, 139, 140]
-  if (navigator.storage?.persist) {
-    navigator.storage.persist().then((granted) => {
-      console.log("[TALA] Persistent storage:", granted ? "granted" : "denied");
-    });
-  }
-  
+// 4. Persistent Storage: para hindi basta-basta burahin ng browser ang local data
+if (navigator.storage?.persist) {
+  navigator.storage.persist();
+}

@@ -23,8 +23,8 @@ const pageTitles: Record<string, string> = {
 export function AdminLayout() {
   const [activePage, setActivePage] = useState("dashboard");
 
-  // 🚧 ADVANCEMENT BLOCKER🚧
-  const pagesUnderConstruction = ["analytics", "dashboard"]; 
+  // 🚧 ADVANCEMENT BLOCKER🚧 — walang laman = walang naka-block (lahat ng page bukas na)
+  const pagesUnderConstruction: string[] = [];
 
   const renderPage = () => {
     switch (activePage) {

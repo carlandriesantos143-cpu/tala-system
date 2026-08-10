@@ -18,7 +18,10 @@ export interface LocalAlert {
   status: string;
   area: string;
   source: string;
-  created_at: string;
+  // Ang admin form ay nagsu-store ng `date`; ang DB ay maaaring may `created_at` din.
+  // Optional pareho para tumugma sa totoong shape ng data mula Supabase.
+  date?: string;
+  created_at?: string;
 }
 
 export interface LocalContact {

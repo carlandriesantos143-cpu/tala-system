@@ -4,13 +4,15 @@ import {
   ArrowLeft,
   Shield,
 } from "lucide-react";
+import { NATIONAL_EMERGENCY_NUMBER } from "../../constants/emergency";
 
 interface EmergencyScreenProps {
   onBack: () => void;
 }
 
 const emergencyContacts = [
-  { name: "Emergency Hotline", number: "117", description: "PNP / General Emergency" },
+  { name: "National Emergency Hotline", number: NATIONAL_EMERGENCY_NUMBER, description: "Police / Fire / Medical" },
+  { name: "PNP Direct Line", number: "117", description: "Philippine National Police" },
   { name: "DOH Hotline", number: "(02) 8651-7800", description: "Department of Health" },
   { name: "Red Cross", number: "143", description: "Philippine Red Cross" },
   { name: "BFP Fire Rescue", number: "(02) 8426-0219", description: "Fire & Rescue" },
@@ -62,12 +64,12 @@ export function EmergencyScreen({ onBack }: EmergencyScreenProps) {
       <div className="mx-auto -mt-3 w-full max-w-[430px] space-y-5 px-5 py-5 pb-8">
         {/* Primary call button */}
         <a
-          href="tel:117"
+          href={`tel:${NATIONAL_EMERGENCY_NUMBER}`}
           className="block bg-red-600 text-white rounded-2xl p-5 text-center shadow-lg shadow-red-600/30 hover:bg-red-700 transition-colors"
         >
           <Phone className="w-8 h-8 mx-auto mb-2" />
           <p className="font-bold" style={{ fontSize: "1.2rem" }}>
-            Call 117
+            Call {NATIONAL_EMERGENCY_NUMBER}
           </p>
           <p className="text-red-200 mt-1" style={{ fontSize: "0.78rem" }}>
             National Emergency Hotline

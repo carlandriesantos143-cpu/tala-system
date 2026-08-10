@@ -108,7 +108,8 @@ export function SettingsPage() {
 
   // Sync & Cache States
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [autoSync, setAutoSync] = useState(true);
+  // Persisted preference — binabasa rin ito ng main.tsx para gabayan ang auto-sync.
+  const [autoSync, setAutoSync] = useState(() => localStorage.getItem("tala_auto_sync") !== "false");
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"idle" | "success" | "failed">("idle");
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
@@ -261,6 +262,8 @@ export function SettingsPage() {
 
       setAccount(accountDraft);
       setEditingAccount(false);
+      // Ipagbigay-alam sa Header na nag-update ang profile para mag-refresh ang pangalan.
+      window.dispatchEvent(new Event("profileUpdated"));
       showToast("Account settings saved");
     } catch (err: any) {
       showToast(err.message || "Failed to save account", "error");
@@ -272,6 +275,10 @@ export function SettingsPage() {
   // ─── SAVE PASSWORD → SUPABASE AUTH ───────────────────────────
   const savePassword = async () => {
     if (!pwForm.current || !pwForm.newPw || pwForm.newPw !== pwForm.confirm) return;
+    if (pwForm.newPw.length < 8) {
+      setPwError("New password must be at least 8 characters.");
+      return;
+    }
     setPwError(null);
     setIsSavingPassword(true);
 
@@ -421,7 +428,12 @@ export function SettingsPage() {
                 {editingAccount ? (
                   <div className="space-y-4">
                     <InputField label="Full Name" value={accountDraft.name} onChange={(v) => setAccountDraft({ ...accountDraft, name: v })} />
-                    <InputField label="Email Address" value={accountDraft.email} onChange={(v) => setAccountDraft({ ...accountDraft, email: v })} />
+                    <div>
+                      <label className="block text-gray-500 mb-1.5" style={{ fontSize: "0.78rem" }}>Email Address</label>
+                      <div className="px-4 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-gray-500" style={{ fontSize: "0.875rem" }}>
+                        {accountDraft.email || "—"} <span className="text-gray-400 ml-1" style={{ fontSize: "0.72rem" }}>(read-only)</span>
+                      </div>
+                    </div>
                     <div>
                       <label className="block text-gray-500 mb-1.5" style={{ fontSize: "0.78rem" }}>Role</label>
                       <div className="px-4 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-gray-500" style={{ fontSize: "0.875rem" }}>
@@ -675,7 +687,14 @@ export function SettingsPage() {
                         <Zap className="w-4 h-4 text-amber-500" />
                         <span className="text-gray-700 font-medium" style={{ fontSize: "0.85rem" }}>Auto Sync</span>
                       </div>
-                      <button onClick={() => setAutoSync(!autoSync)} className="cursor-pointer">
+                      <button
+                        onClick={() => {
+                          const next = !autoSync;
+                          setAutoSync(next);
+                          localStorage.setItem("tala_auto_sync", String(next));
+                        }}
+                        className="cursor-pointer"
+                      >
                         {autoSync ? <ToggleRight className="w-8 h-8 text-emerald-500" /> : <ToggleLeft className="w-8 h-8 text-gray-300" />}
                       </button>
                     </div>

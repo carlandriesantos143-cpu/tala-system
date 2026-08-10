@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Search, Edit2, Trash2, X, Bell, AlertTriangle, AlertCircle, Info, Megaphone, Clock, MapPin, Loader2 } from "lucide-react";
 import { supabase } from "@/app/utils/supabase/client";
+import { toast } from "sonner";
 
 type Priority = "Critical" | "High" | "Medium" | "Low";
 type AlertStatus = "Active" | "Resolved" | "Monitoring";
@@ -66,6 +67,9 @@ export function AlertsPage() {
 
     if (!error && data) {
       setAlerts(data as Alert[]);
+    } else if (error) {
+      console.error("Error loading alerts:", error);
+      toast.error("Failed to load alerts. Check your connection.");
     }
     setLoading(false);
   };
@@ -97,29 +101,35 @@ export function AlertsPage() {
   };
 
   const handleSave = async () => {
-    if (!form.title.trim() || !form.description.trim()) return;
+    if (!form.title.trim() || !form.description.trim()) {
+      toast.error("Title and description are required.");
+      return;
+    }
     setSaving(true);
 
-    if (editingId) {
-      const { error } = await supabase.from("health_alerts").update(form).eq("id", editingId);
-      if (!error) {
-        await fetchAlerts();
-        setShowModal(false);
-      }
+    const { error } = editingId
+      ? await supabase.from("health_alerts").update(form).eq("id", editingId)
+      : await supabase.from("health_alerts").insert([form]);
+
+    if (error) {
+      console.error("Error saving alert:", error);
+      toast.error(`Failed to save alert: ${error.message}`);
     } else {
-      const { error } = await supabase.from("health_alerts").insert([form]);
-      if (!error) {
-        await fetchAlerts();
-        setShowModal(false);
-      }
+      await fetchAlerts();
+      setShowModal(false);
+      toast.success(editingId ? "Alert updated." : "Alert published.");
     }
     setSaving(false);
   };
 
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("health_alerts").delete().eq("id", id);
-    if (!error) {
+    if (error) {
+      console.error("Error deleting alert:", error);
+      toast.error(`Failed to delete alert: ${error.message}`);
+    } else {
       await fetchAlerts();
+      toast.success("Alert deleted.");
     }
     setDeleteConfirm(null);
   };

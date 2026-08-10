@@ -1,4 +1,5 @@
 import type { TriageFlowData } from "./types";
+import { NATIONAL_EMERGENCY_NUMBER } from "../constants/emergency";
 
 export const initialData: TriageFlowData = {
   disclaimer:
@@ -22,7 +23,7 @@ export const initialData: TriageFlowData = {
   ],
 
   redFlags: [
-    { id: 1, symptom: "Unconscious or unresponsive", severity: "Critical", instruction: "Do not move. Call emergency services (117). Check airway and breathing." },
+    { id: 1, symptom: "Unconscious or unresponsive", severity: "Critical", instruction: `Do not move. Call emergency services (${NATIONAL_EMERGENCY_NUMBER}). Check airway and breathing.` },
     { id: 2, symptom: "Severe difficulty breathing or gasping", severity: "Critical", instruction: "Sit patient upright. Clear airway. Call emergency transport immediately." },
     { id: 3, symptom: "Active seizure / convulsion", severity: "Critical", instruction: "Place on side. Do NOT restrain or put anything in mouth. Time the seizure. Call for help." },
     { id: 4, symptom: "Severe bleeding that won't stop", severity: "Critical", instruction: "Apply firm direct pressure with clean cloth. Elevate if limb. Arrange immediate transport." },

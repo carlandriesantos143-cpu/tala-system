@@ -20,7 +20,9 @@ import {
 
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../../services/localDB";
-import type { Urgency, ResultConfig } from "../../triage/types";
+import { supabase } from "../../utils/supabase/client";
+import type { Urgency, ResultConfig, TriageFlowData } from "../../triage/types";
+import { NATIONAL_EMERGENCY_NUMBER } from "../../constants/emergency";
 
 interface TriageFlowProps {
   onBack: () => void;
@@ -93,10 +95,17 @@ export function TriageFlow({
   const storedConfig = useLiveQuery(() => db.triageConfig.toArray());
   const isLoading = storedConfig === undefined;
 
-  let data: any = null;
+  let data: TriageFlowData | null = null;
   if (storedConfig && storedConfig.length > 0) {
-    const rawData = storedConfig[0].data;
-    data = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
+    try {
+      const rawData = storedConfig[0].data;
+      data = (typeof rawData === "string" ? JSON.parse(rawData) : rawData) as TriageFlowData;
+    } catch (err) {
+      // Kung sira/malformed ang naka-store na config, huwag mag-crash —
+      // babagsak na lang sa "Hindi Pa Available" na fallback screen sa baba.
+      console.error("[TALA] Failed to parse triage config:", err);
+      data = null;
+    }
   }
 
   // LAHAT NG HOOKS DAPAT NASA TAAS (Bago ang if-statements)
@@ -110,7 +119,7 @@ export function TriageFlow({
   const [finalResult, setFinalResult] = useState<ResultConfig | null>(null);
 
   // INILIPAT SA TAAS: useCallback Hook
-  const determineResult = useCallback((): ResultConfig => {
+  const determineResult = useCallback((): ResultConfig | undefined => {
     let highestUrgency: Urgency = "Non-Urgent";
     const urgencyRank: Record<Urgency, number> = {
       Emergency: 4,
@@ -119,14 +128,12 @@ export function TriageFlow({
       "Non-Urgent": 1,
     };
 
-    // Gumamit ng data?. para safe kahit null ang data sa unang render
-    for (const cluster of data?.symptomClusters || []) {
-      for (const q of cluster.questions || []) {
+    // Gumamit ng ?? [] para safe kahit null ang data sa unang render
+    for (const cluster of data?.symptomClusters ?? []) {
+      for (const q of cluster.questions ?? []) {
         const answer = answers[q.id];
         if (answer === undefined) continue;
-        const branch = (answer ? q.yesBranch : q.noBranch) as {
-          urgency: Urgency;
-        };
+        const branch = answer ? q.yesBranch : q.noBranch;
         if (urgencyRank[branch.urgency] > urgencyRank[highestUrgency]) {
           highestUrgency = branch.urgency;
         }
@@ -134,10 +141,41 @@ export function TriageFlow({
     }
 
     return (
-      data?.resultConfigs?.find((r: any) => r.urgency === highestUrgency) ||
+      data?.resultConfigs?.find((r) => r.urgency === highestUrgency) ??
       data?.resultConfigs?.[data.resultConfigs.length - 1]
     );
   }, [answers, data]);
+
+  // Mag-log ng ANONYMOUS na session sa Supabase kapag tapos na ang triage.
+  // Fire-and-forget: hindi hinaharangan ang UI at tahimik lang kung mabigo (hal. offline).
+  // Walang PII — age group / user type / outcome / red flag count lang.
+  const logTriageSession = useCallback(
+    (result: ResultConfig | null) => {
+      const ageLabel = data?.ageGroups.find((a) => a.id === selectedAge)?.label ?? null;
+      const userTypeLabel = data?.userTypes.find((u) => u.id === selectedUserType)?.label ?? null;
+      const flaggedClusters = (data?.symptomClusters ?? [])
+        .filter((c) => c.questions.some((q) => answers[q.id] === true))
+        .map((c) => c.name);
+
+      supabase
+        .from("triage_sessions")
+        .insert([
+          {
+            urgency_result: result?.urgency ?? null,
+            age_group: ageLabel,
+            user_type: userTypeLabel,
+            red_flag_count: checkedFlags.size,
+            flagged_clusters: flaggedClusters,
+            completed: true,
+            is_offline: !navigator.onLine,
+          },
+        ])
+        .then(({ error }) => {
+          if (error) console.error("[TALA] Failed to log triage session:", error);
+        });
+    },
+    [data, answers, selectedAge, selectedUserType, checkedFlags],
+  );
 
   const toggleFlag = (id: number) => {
     setCheckedFlags((prev) => {
@@ -165,14 +203,17 @@ export function TriageFlow({
 
   const handleNext = () => {
     if (step === 3 && checkedFlags.size > 0) {
-      setFinalResult(
-        data?.resultConfigs?.find((r: any) => r.urgency === "Emergency")!,
-      );
+      const emergencyResult =
+        data?.resultConfigs?.find((r) => r.urgency === "Emergency") ?? null;
+      setFinalResult(emergencyResult);
+      logTriageSession(emergencyResult);
       setStep(5);
       return;
     }
     if (step === 4) {
-      setFinalResult(determineResult());
+      const result = determineResult() ?? null;
+      setFinalResult(result);
+      logTriageSession(result);
       setStep(5);
       return;
     }
@@ -236,8 +277,13 @@ export function TriageFlow({
   // -----------------------------------------------------------------
   // NORMAL FLOW: Kung may data na ang Admin
   // -----------------------------------------------------------------
-  const enabledAgeGroups = data.ageGroups?.filter((a: any) => a.enabled) || [];
-  const enabledUserTypes = data.userTypes?.filter((u: any) => u.enabled) || [];
+  const enabledAgeGroups = data.ageGroups.filter((a) => a.enabled);
+  const enabledUserTypes = data.userTypes.filter((u) => u.enabled);
+
+  // Informational lang — ipinapakita sa result screen para reference ng BHW.
+  // Hindi ito nakakaapekto sa pag-compute ng urgency (tingnan ang determineResult).
+  const selectedAgeLabel = enabledAgeGroups.find((a) => a.id === selectedAge)?.label;
+  const selectedUserTypeLabel = enabledUserTypes.find((u) => u.id === selectedUserType)?.label;
 
   const stepLabels = [
     "Disclaimer",
@@ -401,7 +447,7 @@ export function TriageFlow({
               </p>
               <div className="grid grid-cols-2 gap-2.5">
                 {enabledAgeGroups.length > 0 ? (
-                  enabledAgeGroups.map((ag: any, i: number) => {
+                  enabledAgeGroups.map((ag, i) => {
                     const Icon = ageIcons[i] || User;
                     const active = selectedAge === ag.id;
                     return (
@@ -462,7 +508,7 @@ export function TriageFlow({
               </p>
               <div className="space-y-2">
                 {enabledUserTypes.length > 0 ? (
-                  enabledUserTypes.map((ut: any) => {
+                  enabledUserTypes.map((ut) => {
                     const active = selectedUserType === ut.id;
                     return (
                       <button
@@ -549,7 +595,7 @@ export function TriageFlow({
 
             <div className="space-y-2">
               {data.redFlags?.length > 0 ? (
-                data.redFlags.map((flag: any) => {
+                data.redFlags.map((flag) => {
                   const checked = checkedFlags.has(flag.id);
                   return (
                     <button
@@ -631,10 +677,10 @@ export function TriageFlow({
 
             {/* Cluster tabs */}
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {data.symptomClusters?.map((cluster: any) => {
+              {data.symptomClusters.map((cluster) => {
                 const active = activeCluster === cluster.id;
                 const answered = cluster.questions.some(
-                  (q: any) => answers[q.id] !== undefined,
+                  (q) => answers[q.id] !== undefined,
                 );
                 return (
                   <button
@@ -662,8 +708,8 @@ export function TriageFlow({
             {activeCluster ? (
               <div className="space-y-3">
                 {data.symptomClusters
-                  ?.find((c: any) => c.id === activeCluster)
-                  ?.questions.map((q: any) => {
+                  .find((c) => c.id === activeCluster)
+                  ?.questions.map((q) => {
                     const answer = answers[q.id];
                     return (
                       <div
@@ -788,6 +834,28 @@ export function TriageFlow({
                   </p>
                 </div>
 
+                {/* Patient context — informational lang, hindi nakakaapekto sa resulta */}
+                {(selectedAgeLabel || selectedUserTypeLabel) && (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedAgeLabel && (
+                      <span
+                        className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-gray-600"
+                        style={{ fontSize: "0.72rem" }}
+                      >
+                        Age: <strong className="text-gray-800">{selectedAgeLabel}</strong>
+                      </span>
+                    )}
+                    {selectedUserTypeLabel && (
+                      <span
+                        className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-gray-600"
+                        style={{ fontSize: "0.72rem" }}
+                      >
+                        User: <strong className="text-gray-800">{selectedUserTypeLabel}</strong>
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Instructions */}
                 <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
                   <div>
@@ -839,8 +907,8 @@ export function TriageFlow({
                     </p>
                     <ul className="space-y-1.5">
                       {data.redFlags
-                        ?.filter((f: any) => checkedFlags.has(f.id))
-                        .map((f: any) => (
+                        .filter((f) => checkedFlags.has(f.id))
+                        .map((f) => (
                           <li key={f.id} className="flex items-start gap-2">
                             <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
                             <span
@@ -860,12 +928,12 @@ export function TriageFlow({
                   {(finalResult.urgency === "Emergency" ||
                     finalResult.urgency === "Urgent") && (
                     <a
-                      href="tel:117"
+                      href={`tel:${NATIONAL_EMERGENCY_NUMBER}`}
                       className={`w-full ${style.btnBg} text-white rounded-2xl p-4 flex items-center justify-center gap-2 font-semibold`}
                       style={{ fontSize: "0.9rem" }}
                     >
                       <Phone className="w-5 h-5" />
-                      Call Emergency Services (117)
+                      Call Emergency Services ({NATIONAL_EMERGENCY_NUMBER})
                     </a>
                   )}
                   <button

@@ -70,10 +70,14 @@ export default defineConfig({
         // ETO YUNG MAGANDANG DINAGDAG NI CLAUDE: Supabase API Backup Caching
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/.*/i,
+            // I-cache LANG ang public content endpoints (articles, alerts, contacts,
+            // triage config). Sinasadyang HINDI kasama ang bhw_users at iba pang
+            // authenticated/user-specific data para hindi matabi sa Cache Storage
+            // ng browser (mahalaga lalo na sa shared na device).
+            urlPattern: /\/rest\/v1\/(health_articles|health_alerts|emergency_contacts|triage_config)/i,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'supabase-api-cache',
+              cacheName: 'tala-public-content-cache',
               expiration: {
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60 * 24, // 24 hours lang itatago
@@ -94,4 +98,7 @@ export default defineConfig({
     },
   },
   assetsInclude: ['**/*.svg', '**/*.csv'],
+  server: {
+    port: 3000,
+  },
 })

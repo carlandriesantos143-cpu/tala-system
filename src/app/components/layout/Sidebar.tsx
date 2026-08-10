@@ -9,7 +9,7 @@ import {
   Settings,
   Heart,
 } from "lucide-react";
-import icon from "@/assets/icons/star-green.svg";
+import icon from "@/assets/icons/Star-green.svg";
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },

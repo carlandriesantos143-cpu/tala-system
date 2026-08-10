@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, Search, Edit2, Loader2, Trash2, X, FileText } from "lucide-react";
 import { supabase } from "@/app/utils/supabase/client";
 import { useAuth } from "@/app/context/AuthContext";
+import { toast } from "sonner";
 
 interface Article {
   id: string;
@@ -55,6 +56,7 @@ export function ArticlesPage() {
       setArticles(formattedData);
     } catch (error) {
       console.error('Error fetching articles:', error);
+      toast.error("Failed to load articles. Check your connection.");
     } finally {
       setLoading(false);
     }
@@ -85,7 +87,14 @@ export function ArticlesPage() {
 
   // 2. Save or Update Article to Supabase
   const handleSave = async () => {
-    if (!form.title.trim() || !user) return; 
+    if (!form.title.trim()) {
+      toast.error("Article title is required.");
+      return;
+    }
+    if (!user) {
+      toast.error("You must be logged in to save.");
+      return;
+    }
     
     try {
       if (editingId) {
@@ -118,8 +127,10 @@ export function ArticlesPage() {
       
       await fetchArticles(); // I-refresh ang listahan
       setShowModal(false);
-    } catch (error) {
+      toast.success(editingId ? "Article updated." : "Article saved.");
+    } catch (error: any) {
        console.error('Error saving article:', error);
+       toast.error(`Failed to save article: ${error.message ?? "Unknown error"}`);
     }
   };
 
@@ -135,8 +146,10 @@ export function ArticlesPage() {
        
        await fetchArticles(); // I-refresh ang listahan
        setDeleteConfirm(null);
-    } catch (error) {
+       toast.success("Article deleted.");
+    } catch (error: any) {
        console.error('Error deleting article:', error);
+       toast.error(`Failed to delete article: ${error.message ?? "Unknown error"}`);
     }
   };
 

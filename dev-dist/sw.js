@@ -82,14 +82,14 @@ define(['./workbox-c5fd805d'], (function (workbox) { 'use strict';
     "revision": "3ca0b8505b4bec776b69afdba2768812"
   }, {
     "url": "index.html",
-    "revision": "0.e833hntfigo"
+    "revision": "0.vgqigmpka4"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
     allowlist: [/^\/$/]
   }));
-  workbox.registerRoute(/^https:\/\/.*\.supabase\.co\/rest\/.*/i, new workbox.NetworkFirst({
-    "cacheName": "supabase-api-cache",
+  workbox.registerRoute(/\/rest\/v1\/(health_articles|health_alerts|emergency_contacts|triage_config)/i, new workbox.NetworkFirst({
+    "cacheName": "tala-public-content-cache",
     plugins: [new workbox.ExpirationPlugin({
       maxEntries: 50,
       maxAgeSeconds: 86400

@@ -1,4 +1,8 @@
 node_modules/
 dist/
+dev-dist/
+
+# Environment variables (never commit secrets)
 .env
-.env.localgit 
+.env.local
+.env.*.local

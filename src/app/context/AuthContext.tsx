@@ -27,16 +27,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
   const initAuth = async () => {
     try {
-      // 1. Setup ng 5-second timeout
+      // getSession() ay LOCAL read mula sa storage na pinamamahalaan ng supabase-js,
+      // kaya gumagana ito kahit offline. Hindi tulad ng dating code na nagbabasa ng
+      // hilaw na localStorage key at nagtitiwala kahit kanino, ang supabase na ang
+      // may hawak ng session na ito.
+      //
+      // Safety timeout lang ito para hindi mag-freeze ang app kung sakaling mag-hang.
+      // MAHALAGA: kapag nag-timeout, FAIL CLOSED tayo (session = null) — mananatiling
+      // naka-logout at ire-redirect sa /login. Hindi na tayo nagbibigay ng access
+      // mula sa hindi na-validate na localStorage (yun ang dating spoof risk / C2).
       const sessionPromise = supabase.auth.getSession();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('session_timeout')), 5000)
+      const timeoutPromise = new Promise((resolve) =>
+        setTimeout(() => resolve({ data: { session: null } }), 5000)
       );
 
-      // 2. Unahan sila: sinong unang matatapos, yun ang masusunod
       const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as any;
-      
+
       if (session?.user) {
+        // Provisional user mula sa session para mabilis mag-render ang UI;
+        // ang buong profile ay kinukuha sa background.
         setUser({
           id: session.user.id,
           full_name: session.user.email?.split('@')[0] || 'BHW Admin',
@@ -44,39 +53,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           barangay: 'Loading...',
           is_active: true,
         });
-        
-        setIsLoading(false); 
-        loadUserProfile(session.user.id); // Kunin ang profile sa background
-        return;
+        loadUserProfile(session.user.id);
       }
     } catch (err) {
-      console.error("Auth init error/timeout:", err);
-      // FALLBACK: Kapag mabagal ang DB, kunin natin yung naka-save na session sa browser!
-      const localSessionData = localStorage.getItem('tala-bhw-session');
-      if (localSessionData) {
-        try {
-          const parsed = JSON.parse(localSessionData);
-          if (parsed?.user) {
-            setUser({
-              id: parsed.user.id,
-              full_name: parsed.user.email?.split('@')[0] || 'BHW Admin',
-              email: parsed.user.email || '',
-              barangay: 'Offline Mode...',
-              is_active: true,
-            });
-          }
-        } catch (e) {
-          console.error("Parse error sa fallback:", e);
-        }
-      }
+      // Fail closed: manatiling naka-logout (null user) kapag may pumalpak.
+      console.error("Auth init error:", err);
     } finally {
       setIsLoading(false); // Patayin ang loading screen kahit anong mangyari
     }
   };
-    
+
     initAuth();
 
-    // 2. Listen for Login/Logout events
+    // Listen for Login/Logout events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === 'SIGNED_IN' && session?.user) {
@@ -103,14 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Lagyan din natin ng 5-second timeout ang pag-fetch ng profile
       const fetchPromise = supabase.from('bhw_users').select('*').eq('id', userId).single();
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('profile_timeout')), 5000)
       );
 
       const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
       if (!error && data) {
-        setUser(data as BHWUser); 
+        setUser(data as BHWUser);
       }
     } catch (err) {
       console.error("Background profile fetch error or timeout:", err);
@@ -123,10 +112,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: email.trim().toLowerCase(),
         password,
       });
-      
+
       if (error) return { success: false, error: error.message };
       if (!data.user) return { success: false, error: 'Login failed. Try again.' };
-      
+
       return { success: true };
     } catch (err: any) {
       return { success: false, error: 'Connection error. Please check your internet.' };

@@ -179,7 +179,7 @@ export function HomeScreen({
       {/* Main CTA — Start Triage */}
       <button
         onClick={onStartTriage}
-        className="col-span-2 relative overflow-hidden p-5 flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] text-left"
+        className="w-full col-span-2 relative overflow-hidden p-5 flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] text-left"
         style={{
           background: EMERALD,
           border: "1px solid rgba(255,255,255,0.4)",
