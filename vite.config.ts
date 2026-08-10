@@ -35,16 +35,19 @@ export default defineConfig({
         display: 'standalone',
         start_url: '/',
         icons: [
-          // Pinalitan natin para tugma sa file na meron ka na sa public folder
+          // Green star icon (may white background + padding para maganda sa
+          // Android adaptive at iOS home screen).
           {
             src: '/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
+            purpose: 'any maskable',
           },
           {
             src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
+            purpose: 'any maskable',
           },
         ],
 
