@@ -1,6 +1,6 @@
   import { useNavigate } from "react-router";
   // Public asset — reference by URL (nasa public/ folder), hindi i-import.
-  const logo = "/tala-logo.svg";
+  const logo = "/StarIcon-green.svg";
 
   export function LandingPage() {
     const navigate = useNavigate();
