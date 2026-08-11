@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./app/App.tsx";
 import "./styles/index.css";
-import { fetchAndStore, selfRepair } from "./app/services/syncService";
+import { fetchAndStore, selfRepair, flushPendingSessions } from "./app/services/syncService";
 
 // 1. I-render ang React App
 createRoot(document.getElementById("root")!).render(<App />);
@@ -17,8 +17,17 @@ if (autoSyncEnabled() && navigator.onLine) {
   fetchAndStore();
 }
 
+// 2b. I-flush ang naka-queue na offline triage sessions pagbukas kung online.
+// Hindi naka-gate sa auto-sync — maliit na outgoing data ito (sariling records),
+// at layunin nitong huwag mawala ang sessions.
+if (navigator.onLine) {
+  flushPendingSessions();
+}
+
 // 3. Self-Repair: kapag bumalik ang internet, mag-sync ulit (kung naka-ON ang auto-sync)
 window.addEventListener("online", () => {
+  // Laging subukang ipadala ang naka-queue na sessions pagbalik ng net.
+  flushPendingSessions();
   if (!autoSyncEnabled()) return;
   selfRepair();
 });

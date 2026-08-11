@@ -22,11 +22,14 @@ import type {
   Urgency,
   BranchTarget,
   BranchOutcome,
+  AgeGroup,
+  AgeEscalation,
 } from "../types";
 import { urgencyConfig, urgencyLevels } from "../types";
 
 interface Props {
   clusters: SymptomCluster[];
+  ageGroups: AgeGroup[];
   onChange: (clusters: SymptomCluster[]) => void;
 }
 
@@ -35,27 +38,34 @@ type ModalMode =
   | { kind: "cluster"; editing: SymptomCluster | null }
   | { kind: "question"; clusterId: number; editing: ClusterQuestion | null };
 
-const emptyCluster = { name: "", description: "" };
+const emptyCluster: { name: string; description: string; ageGroupIds: number[] } = {
+  name: "",
+  description: "",
+  ageGroupIds: [],
+};
 const emptyTarget: BranchTarget = { type: "result" as const, urgency: "Non-Urgent" as Urgency };
 const emptyBranch: Omit<BranchOutcome, "target"> & { target: BranchTarget } = {
   label: "",
   urgency: "Non-Urgent" as Urgency,
   action: "",
   target: { ...emptyTarget },
+  ageEscalations: [],
 };
 type QuestionFormState = {
   question: string;
+  ageGroupIds: number[];
   yesBranch: BranchOutcome;
   noBranch: BranchOutcome;
 };
 
 const emptyQuestion: QuestionFormState = {
   question: "",
-  yesBranch: { ...emptyBranch, target: { ...emptyTarget } },
-  noBranch: { ...emptyBranch, target: { ...emptyTarget } },
+  ageGroupIds: [],
+  yesBranch: { ...emptyBranch, target: { ...emptyTarget }, ageEscalations: [] },
+  noBranch: { ...emptyBranch, target: { ...emptyTarget }, ageEscalations: [] },
 };
 
-export function StepSymptomClusters({ clusters, onChange }: Props) {
+export function StepSymptomClusters({ clusters, ageGroups, onChange }: Props) {
   const [expandedCluster, setExpandedCluster] = useState<number | null>(
     clusters[0]?.id ?? null
   );
@@ -74,7 +84,11 @@ export function StepSymptomClusters({ clusters, onChange }: Props) {
     setModal({ kind: "cluster", editing: null });
   };
   const openEditCluster = (c: SymptomCluster) => {
-    setClusterForm({ name: c.name, description: c.description });
+    setClusterForm({
+      name: c.name,
+      description: c.description,
+      ageGroupIds: c.ageGroupIds ?? [],
+    });
     setModal({ kind: "cluster", editing: c });
   };
   const saveCluster = () => {
@@ -106,17 +120,20 @@ export function StepSymptomClusters({ clusters, onChange }: Props) {
   const openAddQuestion = (clusterId: number) => {
     setQuestionForm({
       question: "",
+      ageGroupIds: [],
       yesBranch: {
         label: "",
         urgency: "Non-Urgent",
         action: "",
         target: { type: "result", urgency: "Non-Urgent" },
+        ageEscalations: [],
       },
       noBranch: {
         label: "",
         urgency: "Non-Urgent",
         action: "",
         target: { type: "result", urgency: "Non-Urgent" },
+        ageEscalations: [],
       },
     });
     setModal({ kind: "question", clusterId, editing: null });
@@ -124,14 +141,17 @@ export function StepSymptomClusters({ clusters, onChange }: Props) {
   const openEditQuestion = (clusterId: number, q: ClusterQuestion) => {
     setQuestionForm({
       question: q.question,
+      ageGroupIds: q.ageGroupIds ?? [],
       yesBranch: {
         ...q.yesBranch,
+        ageEscalations: q.yesBranch.ageEscalations ?? [],
         target: q.yesBranch.target
           ? { ...q.yesBranch.target }
           : { type: "result", urgency: q.yesBranch.urgency },
       },
       noBranch: {
         ...q.noBranch,
+        ageEscalations: q.noBranch.ageEscalations ?? [],
         target: q.noBranch.target
           ? { ...q.noBranch.target }
           : { type: "result", urgency: q.noBranch.urgency },
@@ -857,11 +877,20 @@ export function StepSymptomClusters({ clusters, onChange }: Props) {
                     style={{ fontSize: "0.875rem" }}
                   />
                 </div>
+                <AgeGroupSelector
+                  ageGroups={ageGroups}
+                  selected={clusterForm.ageGroupIds}
+                  onChange={(ids) =>
+                    setClusterForm({ ...clusterForm, ageGroupIds: ids })
+                  }
+                  label="Show this category to age groups"
+                />
               </div>
             ) : (
               <QuestionFormEditor
                 form={questionForm}
                 onChange={setQuestionForm}
+                ageGroups={ageGroups}
                 allQuestions={
                   clusters.find(
                     (c) =>
@@ -902,15 +931,18 @@ export function StepSymptomClusters({ clusters, onChange }: Props) {
 function QuestionFormEditor({
   form,
   onChange,
+  ageGroups,
   allQuestions,
   editingId,
 }: {
   form: {
     question: string;
+    ageGroupIds: number[];
     yesBranch: BranchOutcome;
     noBranch: BranchOutcome;
   };
   onChange: (f: typeof form) => void;
+  ageGroups: AgeGroup[];
   allQuestions: ClusterQuestion[];
   editingId?: number;
 }) {
@@ -935,11 +967,19 @@ function QuestionFormEditor({
         />
       </div>
 
+      <AgeGroupSelector
+        ageGroups={ageGroups}
+        selected={form.ageGroupIds}
+        onChange={(ids) => onChange({ ...form, ageGroupIds: ids })}
+        label="Show this question to age groups"
+      />
+
       {/* YES branch */}
       <BranchEditor
         branchLabel="YES"
         branchColor="emerald"
         branch={form.yesBranch}
+        ageGroups={ageGroups}
         otherQuestions={otherQuestions}
         onChange={(b) => onChange({ ...form, yesBranch: b })}
       />
@@ -949,6 +989,7 @@ function QuestionFormEditor({
         branchLabel="NO"
         branchColor="gray"
         branch={form.noBranch}
+        ageGroups={ageGroups}
         otherQuestions={otherQuestions}
         onChange={(b) => onChange({ ...form, noBranch: b })}
       />
@@ -962,12 +1003,14 @@ function BranchEditor({
   branchLabel,
   branchColor,
   branch,
+  ageGroups,
   otherQuestions,
   onChange,
 }: {
   branchLabel: "YES" | "NO";
   branchColor: "emerald" | "gray";
   branch: BranchOutcome;
+  ageGroups: AgeGroup[];
   otherQuestions: ClusterQuestion[];
   onChange: (b: BranchOutcome) => void;
 }) {
@@ -1167,7 +1210,175 @@ function BranchEditor({
             style={{ fontSize: "0.85rem" }}
           />
         </div>
+
+        {/* Age-based escalation (optional) */}
+        <AgeEscalationEditor
+          ageGroups={ageGroups}
+          escalations={branch.ageEscalations ?? []}
+          onChange={(esc) => onChange({ ...branch, ageEscalations: esc })}
+        />
       </div>
+    </div>
+  );
+}
+
+/* ========== Age group multi-select (chips) ========== */
+
+function AgeGroupSelector({
+  ageGroups,
+  selected,
+  onChange,
+  label,
+}: {
+  ageGroups: AgeGroup[];
+  selected: number[];
+  onChange: (ids: number[]) => void;
+  label: string;
+}) {
+  const enabled = ageGroups.filter((g) => g.enabled);
+  const toggle = (id: number) => {
+    const set = new Set(selected ?? []);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    onChange(Array.from(set));
+  };
+  const showsAll = !selected || selected.length === 0;
+
+  return (
+    <div>
+      <label className="block text-gray-600 mb-1.5" style={{ fontSize: "0.8rem" }}>
+        {label}
+      </label>
+      <p className="text-gray-400 mb-2" style={{ fontSize: "0.7rem" }}>
+        Walang piniling edad = ipapakita sa <strong>lahat</strong> ng edad.
+      </p>
+      {enabled.length === 0 ? (
+        <p className="text-amber-600" style={{ fontSize: "0.72rem" }}>
+          Walang naka-enable na age group. Idagdag muna sa Step 2 (Patient Context).
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {enabled.map((g) => {
+            const sel = (selected ?? []).includes(g.id);
+            return (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => toggle(g.id)}
+                className={`px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                  sel
+                    ? "bg-emerald-600 text-white border-emerald-600"
+                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                }`}
+                style={{ fontSize: "0.72rem", fontWeight: 500 }}
+              >
+                {g.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {showsAll && (
+        <p className="text-emerald-600 mt-1.5" style={{ fontSize: "0.68rem" }}>
+          Kasalukuyang ipinapakita sa lahat ng edad.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ========== Age-based urgency escalation editor ========== */
+
+function AgeEscalationEditor({
+  ageGroups,
+  escalations,
+  onChange,
+}: {
+  ageGroups: AgeGroup[];
+  escalations: AgeEscalation[];
+  onChange: (esc: AgeEscalation[]) => void;
+}) {
+  const add = () =>
+    onChange([...escalations, { ageGroupIds: [], urgency: "Emergency" }]);
+  const update = (i: number, patch: Partial<AgeEscalation>) =>
+    onChange(escalations.map((e, j) => (j === i ? { ...e, ...patch } : e)));
+  const remove = (i: number) =>
+    onChange(escalations.filter((_, j) => j !== i));
+
+  return (
+    <div className="rounded-lg border border-dashed border-gray-300 p-3">
+      <label className="block text-gray-600 mb-1" style={{ fontSize: "0.75rem", fontWeight: 600 }}>
+        Age-based escalation (optional)
+      </label>
+      <p className="text-gray-400 mb-2.5" style={{ fontSize: "0.68rem" }}>
+        Itaas ang urgency para sa mga vulnerable na edad (hal. lagnat sa newborn).
+        Ito ay <strong>nagtataas lamang</strong> ng urgency — hindi kailanman
+        nagpapababa.
+      </p>
+
+      {escalations.map((esc, i) => (
+        <div key={i} className="bg-white rounded-lg border border-gray-200 p-3 mb-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-gray-500" style={{ fontSize: "0.7rem", fontWeight: 600 }}>
+              Escalation #{i + 1}
+            </span>
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md cursor-pointer"
+              title="Remove escalation"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <AgeGroupSelector
+            ageGroups={ageGroups}
+            selected={esc.ageGroupIds}
+            onChange={(ids) => update(i, { ageGroupIds: ids })}
+            label="For these age groups"
+          />
+          {esc.ageGroupIds.length === 0 && (
+            <p className="text-amber-600 mt-1" style={{ fontSize: "0.68rem" }}>
+              Pumili ng kahit isang edad — kung wala, walang epekto ang escalation na ito.
+            </p>
+          )}
+          <div className="mt-2.5">
+            <label className="block text-gray-500 mb-1" style={{ fontSize: "0.7rem" }}>
+              Raise urgency to
+            </label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {urgencyLevels.map((u) => {
+                const cfg = urgencyConfig[u];
+                const sel = esc.urgency === u;
+                return (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => update(i, { urgency: u })}
+                    className={`py-1.5 rounded-lg border transition-all cursor-pointer ${
+                      sel
+                        ? `${cfg.bg} ${cfg.border} ${cfg.text}`
+                        : "bg-white border-gray-200 text-gray-400 hover:border-gray-300"
+                    }`}
+                    style={{ fontSize: "0.68rem", fontWeight: 500 }}
+                  >
+                    {u}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={add}
+        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
+        style={{ fontSize: "0.72rem" }}
+      >
+        <Plus className="w-3 h-3" /> Add age escalation
+      </button>
     </div>
   );
 }

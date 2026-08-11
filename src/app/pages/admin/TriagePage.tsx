@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/app/utils/supabase/client";
-import { toast } from "sonner"; 
+import { toast } from "sonner";
 import {
   ShieldCheck,
   Users,
@@ -9,8 +9,11 @@ import {
   Settings2,
   Activity,
   CheckCircle2,
+  ShieldAlert,
+  AlertTriangle,
 } from "lucide-react";
 import type { TriageFlowData } from "../../triage/types";
+import { validateTriageConfig } from "../../triage/validation";
 import { initialData } from "../../triage/initialData";
 import { StepDisclaimer } from "../../triage/steps/StepDisclaimer";
 import { StepPatientContext } from "../../triage/steps/StepPatientContext";
@@ -61,7 +64,19 @@ useEffect(() => {
     fetchConfig();
   }, []);
 
+  // Live validation ng buong config (errors bumabara sa save; warnings pinapayagan).
+  const issues = useMemo(() => validateTriageConfig(data), [data]);
+  const errors = issues.filter((i) => i.level === "error");
+  const warnings = issues.filter((i) => i.level === "warning");
+
   const handleSave = async () => {
+    // SAFETY: huwag i-save ang sirang config na hihilahin ng mga residente.
+    if (errors.length > 0) {
+      toast.error(
+        `Ayusin muna ang ${errors.length} error bago mag-save (tingnan ang "Checks" sa sidebar).`,
+      );
+      return;
+    }
     setIsSaving(true);
     try {
       // 1. I-check muna natin kung may existing row na sa database
@@ -138,6 +153,7 @@ useEffect(() => {
         return (
           <StepSymptomClusters
             clusters={data.symptomClusters}
+            ageGroups={data.ageGroups}
             onChange={(clusters) => setData({ ...data, symptomClusters: clusters })}
           />
         );
@@ -292,6 +308,86 @@ useEffect(() => {
             </div>
           </div>
         </div>
+
+        {/* Validation checks */}
+        <div
+          className={`p-4 mx-3 mb-4 rounded-xl border ${
+            errors.length > 0
+              ? "bg-red-50 border-red-200"
+              : warnings.length > 0
+              ? "bg-amber-50 border-amber-200"
+              : "bg-emerald-50 border-emerald-100"
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            {errors.length > 0 ? (
+              <ShieldAlert className="w-4 h-4 text-red-600" />
+            ) : warnings.length > 0 ? (
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            )}
+            <p
+              className={`font-medium ${
+                errors.length > 0
+                  ? "text-red-800"
+                  : warnings.length > 0
+                  ? "text-amber-800"
+                  : "text-emerald-800"
+              }`}
+              style={{ fontSize: "0.78rem" }}
+            >
+              Checks
+            </p>
+            {issues.length > 0 && (
+              <span
+                className="ml-auto text-gray-500"
+                style={{ fontSize: "0.65rem" }}
+              >
+                {errors.length > 0 && `${errors.length} error`}
+                {errors.length > 0 && warnings.length > 0 && " · "}
+                {warnings.length > 0 && `${warnings.length} warning`}
+              </span>
+            )}
+          </div>
+
+          {issues.length === 0 ? (
+            <p className="text-emerald-700" style={{ fontSize: "0.7rem" }}>
+              Handa nang i-save — walang nakitang isyu.
+            </p>
+          ) : (
+            <div className="space-y-1.5 max-h-56 overflow-auto">
+              {issues.map((issue, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => issue.step && setActiveStep(issue.step)}
+                  className="w-full text-left flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-white/60 cursor-pointer transition-colors"
+                  title={issue.step ? `Pumunta sa Step ${issue.step}` : undefined}
+                >
+                  <span
+                    className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${
+                      issue.level === "error" ? "bg-red-500" : "bg-amber-500"
+                    }`}
+                  />
+                  <span
+                    className={
+                      issue.level === "error" ? "text-red-700" : "text-amber-700"
+                    }
+                    style={{ fontSize: "0.68rem", lineHeight: 1.35 }}
+                  >
+                    {issue.message}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {errors.length > 0 && (
+            <p className="text-red-600 mt-2" style={{ fontSize: "0.64rem" }}>
+              Hindi maisa-save hangga't may error.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Main Content */}
@@ -346,7 +442,8 @@ useEffect(() => {
               /* DITO LALABAS ANG SAVE BUTTON SA STEP 5 */
               <button
                 onClick={handleSave}
-                disabled={isSaving}
+                disabled={isSaving || errors.length > 0}
+                title={errors.length > 0 ? "Ayusin muna ang mga error sa Checks" : undefined}
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
                 style={{ fontSize: "0.85rem" }}
               >

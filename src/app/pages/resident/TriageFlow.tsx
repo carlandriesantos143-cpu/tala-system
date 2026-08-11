@@ -20,9 +20,36 @@ import {
 
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../../services/localDB";
-import { supabase } from "../../utils/supabase/client";
-import type { Urgency, ResultConfig, TriageFlowData } from "../../triage/types";
+import { queueTriageSession } from "../../services/syncService";
+import type {
+  Urgency,
+  ResultConfig,
+  TriageFlowData,
+  SymptomCluster,
+} from "../../triage/types";
+import {
+  isVisibleForAge,
+  effectiveUrgency,
+  urgencyRank,
+} from "../../triage/types";
 import { NATIONAL_EMERGENCY_NUMBER } from "../../constants/emergency";
+
+// SAFETY: maingat na fallback kapag walang naka-configure/nakikitang tanong para
+// sa napiling edad, o walang tugmang resulta. Pinapanatili ang urgency at
+// itinuturo ang residente sa BHW — kailanman hindi nagba-babae ng antas.
+function safeConsultResult(urgency: Urgency): ResultConfig {
+  return {
+    urgency,
+    title: `${urgency} — Kumonsulta sa inyong Barangay Health Worker`,
+    description:
+      "Hindi lubos na natugma ang assessment na ito sa naka-configure na protocol. Para sa kaligtasan, kumonsulta sa inyong BHW o pinakamalapit na health facility.",
+    defaultAction:
+      "Dalhin ang pasyente sa Barangay Health Worker o pinakamalapit na health facility para sa maayos na pagsusuri.",
+    escalationNote:
+      "Kung malubha o lumalala ang sintomas, humingi kaagad ng emergency care.",
+    color: "amber",
+  };
+}
 
 interface TriageFlowProps {
   onBack: () => void;
@@ -118,33 +145,54 @@ export function TriageFlow({
   const [answers, setAnswers] = useState<Record<number, boolean>>({});
   const [finalResult, setFinalResult] = useState<ResultConfig | null>(null);
 
-  // INILIPAT SA TAAS: useCallback Hook
-  const determineResult = useCallback((): ResultConfig | undefined => {
-    let highestUrgency: Urgency = "Non-Urgent";
-    const urgencyRank: Record<Urgency, number> = {
-      Emergency: 4,
-      Urgent: 3,
-      "Semi-Urgent": 2,
-      "Non-Urgent": 1,
-    };
+  // AGE-AWARE: ibinabalik LAMANG ang mga cluster/tanong na naaangkop sa napiling
+  // edad. Iisang source of truth para sa tabs, tanong, completion gate,
+  // determineResult, at analytics logging — para laging magkatugma.
+  const getVisibleClusters = useCallback((): SymptomCluster[] => {
+    return (data?.symptomClusters ?? [])
+      .filter((c) => isVisibleForAge(c.ageGroupIds, selectedAge))
+      .map((c) => ({
+        ...c,
+        questions: (c.questions ?? []).filter((q) =>
+          isVisibleForAge(q.ageGroupIds, selectedAge),
+        ),
+      }))
+      .filter((c) => c.questions.length > 0);
+  }, [data, selectedAge]);
 
-    // Gumamit ng ?? [] para safe kahit null ang data sa unang render
-    for (const cluster of data?.symptomClusters ?? []) {
-      for (const q of cluster.questions ?? []) {
+  // INILIPAT SA TAAS: useCallback Hook
+  const determineResult = useCallback((): ResultConfig => {
+    let highestUrgency: Urgency = "Non-Urgent";
+    const visibleClusters = getVisibleClusters();
+
+    // SAFETY: kung walang applicable na tanong para sa edad na ito (posibleng
+    // maling config), HUWAG mag-return ng Non-Urgent (false reassurance).
+    // Ibigay ang maingat na consult-BHW result.
+    if (visibleClusters.length === 0) {
+      return safeConsultResult("Semi-Urgent");
+    }
+
+    for (const cluster of visibleClusters) {
+      for (const q of cluster.questions) {
         const answer = answers[q.id];
         if (answer === undefined) continue;
         const branch = answer ? q.yesBranch : q.noBranch;
-        if (urgencyRank[branch.urgency] > urgencyRank[highestUrgency]) {
-          highestUrgency = branch.urgency;
+        // AGE-AWARE: gamitin ang effectiveUrgency (max ng base + escalation).
+        const u = effectiveUrgency(branch, selectedAge);
+        if (urgencyRank[u] > urgencyRank[highestUrgency]) {
+          highestUrgency = u;
         }
       }
     }
 
-    return (
-      data?.resultConfigs?.find((r) => r.urgency === highestUrgency) ??
-      data?.resultConfigs?.[data.resultConfigs.length - 1]
-    );
-  }, [answers, data]);
+    // Gamitin ang eksaktong naka-configure na resulta para sa computed urgency.
+    const match = data?.resultConfigs?.find((r) => r.urgency === highestUrgency);
+    if (match) return match;
+
+    // SAFETY: kung walang naka-configure na resulta para sa level na ito,
+    // HUWAG mag-default sa pinakamababa. Panatilihin ang computed urgency.
+    return safeConsultResult(highestUrgency);
+  }, [answers, data, selectedAge, getVisibleClusters]);
 
   // Mag-log ng ANONYMOUS na session sa Supabase kapag tapos na ang triage.
   // Fire-and-forget: hindi hinaharangan ang UI at tahimik lang kung mabigo (hal. offline).
@@ -153,28 +201,26 @@ export function TriageFlow({
     (result: ResultConfig | null) => {
       const ageLabel = data?.ageGroups.find((a) => a.id === selectedAge)?.label ?? null;
       const userTypeLabel = data?.userTypes.find((u) => u.id === selectedUserType)?.label ?? null;
-      const flaggedClusters = (data?.symptomClusters ?? [])
+      const flaggedClusters = getVisibleClusters()
         .filter((c) => c.questions.some((q) => answers[q.id] === true))
         .map((c) => c.name);
 
-      supabase
-        .from("triage_sessions")
-        .insert([
-          {
-            urgency_result: result?.urgency ?? null,
-            age_group: ageLabel,
-            user_type: userTypeLabel,
-            red_flag_count: checkedFlags.size,
-            flagged_clusters: flaggedClusters,
-            completed: true,
-            is_offline: !navigator.onLine,
-          },
-        ])
-        .then(({ error }) => {
-          if (error) console.error("[TALA] Failed to log triage session:", error);
-        });
+      // OFFLINE-DURABLE: i-queue muna sa Dexie (hindi mawawala kahit offline),
+      // awtomatikong ipapadala sa Supabase pagbalik ng internet. Ang is_offline
+      // at created_at ay kinukuha NGAYON (creation time) para tumpak ang analytics
+      // kahit na-flush lang ang row mamaya.
+      void queueTriageSession({
+        urgency_result: result?.urgency ?? null,
+        age_group: ageLabel,
+        user_type: userTypeLabel,
+        red_flag_count: checkedFlags.size,
+        flagged_clusters: flaggedClusters,
+        completed: true,
+        is_offline: !navigator.onLine,
+        created_at: new Date().toISOString(),
+      });
     },
-    [data, answers, selectedAge, selectedUserType, checkedFlags],
+    [data, answers, selectedAge, selectedUserType, checkedFlags, getVisibleClusters],
   );
 
   const toggleFlag = (id: number) => {
@@ -186,6 +232,25 @@ export function TriageFlow({
     });
   };
 
+  // SAFETY: Kailangang tapusin ng residente ang assessment bago makakuha ng resulta.
+  // Hindi sapat ang iisang sagot lang (dating `answers.length > 0`) — sa flat na
+  // "max urgency" na modelo, ang kalahating sagot na cluster ay maaaring hindi
+  // mabilang ang mismong tanong na magtataas sana ng urgency. Kaya:
+  //   - kahit isang cluster ay dapat kumpletong nasagot, AT
+  //   - lahat ng cluster na SINIMULAN ay dapat kumpleto.
+  const isStep4Complete = () => {
+    const visible = getVisibleClusters();
+    const started = visible.filter((c) =>
+      c.questions.some((q) => answers[q.id] !== undefined),
+    );
+    return (
+      started.length > 0 &&
+      started.every((c) =>
+        c.questions.every((q) => answers[q.id] !== undefined),
+      )
+    );
+  };
+
   const canNext = () => {
     switch (step) {
       case 1:
@@ -195,7 +260,10 @@ export function TriageFlow({
       case 3:
         return true;
       case 4:
-        return Object.keys(answers).length > 0;
+        // Kung walang applicable na tanong para sa edad, payagang makuha ang
+        // safe consult-BHW result (huwag i-trap ang residente).
+        if (getVisibleClusters().length === 0) return true;
+        return isStep4Complete();
       default:
         return false;
     }
@@ -279,6 +347,10 @@ export function TriageFlow({
   // -----------------------------------------------------------------
   const enabledAgeGroups = data.ageGroups.filter((a) => a.enabled);
   const enabledUserTypes = data.userTypes.filter((u) => u.enabled);
+
+  // AGE-AWARE: mga cluster/tanong na naaangkop lang sa napiling edad.
+  const visibleClusters = getVisibleClusters();
+  const activeVisibleCluster = visibleClusters.find((c) => c.id === activeCluster);
 
   // Informational lang — ipinapakita sa result screen para reference ng BHW.
   // Hindi ito nakakaapekto sa pag-compute ng urgency (tingnan ang determineResult).
@@ -675,13 +747,35 @@ export function TriageFlow({
               </p>
             </div>
 
+            {/* AGE-AWARE: walang applicable na kategorya para sa napiling edad */}
+            {visibleClusters.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+                <CircleAlert className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p
+                    className="text-amber-800 font-semibold"
+                    style={{ fontSize: "0.82rem" }}
+                  >
+                    Walang naka-set na tanong para sa edad na ito
+                  </p>
+                  <p className="text-amber-700 mt-0.5" style={{ fontSize: "0.75rem" }}>
+                    Mangyaring kumonsulta sa inyong Barangay Health Worker. Tapikin
+                    ang <strong>Get Result</strong> para sa gabay.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Cluster tabs */}
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {data.symptomClusters.map((cluster) => {
+            <div className={`flex gap-2 overflow-x-auto pb-1 ${visibleClusters.length === 0 ? "hidden" : ""}`}>
+              {visibleClusters.map((cluster) => {
                 const active = activeCluster === cluster.id;
-                const answered = cluster.questions.some(
+                const total = cluster.questions.length;
+                const answeredCount = cluster.questions.filter(
                   (q) => answers[q.id] !== undefined,
-                );
+                ).length;
+                const fullyAnswered = total > 0 && answeredCount === total;
+                const partiallyAnswered = answeredCount > 0 && !fullyAnswered;
                 return (
                   <button
                     key={cluster.id}
@@ -689,15 +783,25 @@ export function TriageFlow({
                     className={`px-4 py-2.5 rounded-xl whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
                       active
                         ? "bg-emerald-600 text-white"
-                        : answered
+                        : fullyAnswered
                           ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                          : "bg-white text-gray-600 border border-gray-200"
+                          : partiallyAnswered
+                            ? "bg-amber-50 text-amber-700 border border-amber-200"
+                            : "bg-white text-gray-600 border border-gray-200"
                     }`}
                     style={{ fontSize: "0.78rem", fontWeight: 500 }}
                   >
                     {cluster.name}
-                    {answered && !active && (
+                    {fullyAnswered && !active && (
                       <CheckCircle2 className="w-3.5 h-3.5" />
+                    )}
+                    {partiallyAnswered && !active && (
+                      <span
+                        className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700"
+                        style={{ fontSize: "0.6rem", fontWeight: 700 }}
+                      >
+                        {answeredCount}/{total}
+                      </span>
                     )}
                   </button>
                 );
@@ -705,11 +809,10 @@ export function TriageFlow({
             </div>
 
             {/* Questions */}
-            {activeCluster ? (
+            {visibleClusters.length > 0 &&
+              (activeVisibleCluster ? (
               <div className="space-y-3">
-                {data.symptomClusters
-                  .find((c) => c.id === activeCluster)
-                  ?.questions.map((q) => {
+                {activeVisibleCluster.questions.map((q) => {
                     const answer = answers[q.id];
                     return (
                       <div
@@ -765,9 +868,10 @@ export function TriageFlow({
                               style={{ fontSize: "0.72rem" }}
                             >
                               {answer ? q.yesBranch.label : q.noBranch.label} (
-                              {answer
-                                ? q.yesBranch.urgency
-                                : q.noBranch.urgency}
+                              {effectiveUrgency(
+                                answer ? q.yesBranch : q.noBranch,
+                                selectedAge,
+                              )}
                               )
                             </p>
                             <p
@@ -795,6 +899,18 @@ export function TriageFlow({
                   style={{ fontSize: "0.7rem" }}
                 >
                   Answer the questions to get guidance
+                </p>
+              </div>
+              ))}
+
+            {/* SAFETY: paalala kung hindi pa kumpleto ang assessment */}
+            {visibleClusters.length > 0 && !isStep4Complete() && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-3">
+                <CircleAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-amber-700" style={{ fontSize: "0.75rem" }}>
+                  Pumili ng kategorya at sagutin ang <strong>lahat</strong> ng
+                  tanong dito bago kumuha ng resulta. Ang kumpletong sagot ay
+                  tumutulong na hindi malampasan ang mahahalagang sintomas.
                 </p>
               </div>
             )}

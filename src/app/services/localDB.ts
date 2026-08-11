@@ -41,11 +41,27 @@ export interface LocalTriageConfig {
   updated_at: string;
 }
 
+// Nakapila na anonymous triage session na hindi pa naipapadala sa Supabase
+// (hal. offline nang matapos ang triage). Ipapadala pagbalik ng internet.
+// Walang PII — pareho ng shape ng `triage_sessions` insert.
+export interface PendingTriageSession {
+  id?: number; // auto-increment local key (Dexie ang bahala)
+  urgency_result: string | null;
+  age_group: string | null;
+  user_type: string | null;
+  red_flag_count: number;
+  flagged_clusters: string[];
+  completed: boolean;
+  is_offline: boolean;
+  created_at: string; // ISO — kung KAILAN talaga naganap ang session (hindi flush time)
+}
+
 class TALADatabase extends Dexie {
   articles!: Table<LocalArticle>;
   alerts!: Table<LocalAlert>;
   contacts!: Table<LocalContact>;
   triageConfig!: Table<LocalTriageConfig>;
+  pendingSessions!: Table<PendingTriageSession>;
 
   constructor() {
     super("tala_db");
@@ -54,6 +70,14 @@ class TALADatabase extends Dexie {
       alerts:      "id, status, priority",
       contacts:    "id, status, type",
       triageConfig: "id",
+    });
+    // v2: idinagdag ang outbox para sa offline triage sessions.
+    this.version(2).stores({
+      articles:    "id, status, category",
+      alerts:      "id, status, priority",
+      contacts:    "id, status, type",
+      triageConfig: "id",
+      pendingSessions: "++id, created_at",
     });
   }
 }

@@ -1,5 +1,5 @@
 import { supabase } from "@/app/utils/supabase/client";
-import { db } from "./localDB";
+import { db, type PendingTriageSession } from "./localDB";
 
 // ── Pull Supabase → write to IndexedDB ──────────────────────
 export async function fetchAndStore(): Promise<void> {
@@ -19,6 +19,50 @@ export async function fetchAndStore(): Promise<void> {
     console.log("[TALA Sync] fetchAndStore complete");
   } catch (err) {
     console.error("[TALA Sync] fetchAndStore failed:", err);
+  }
+}
+
+// ── Triage session OUTBOX (offline-durable logging) ─────────
+// Ini-save muna ang session sa Dexie BAGO subukang ipadala, para hindi
+// kailanman mawala kahit offline. Awtomatikong ipapadala pagbalik ng net.
+
+let flushing = false; // in-flight guard — iwas double-send kung sabay-sabay ang triggers
+
+export async function queueTriageSession(
+  payload: Omit<PendingTriageSession, "id">,
+): Promise<void> {
+  try {
+    await db.pendingSessions.add(payload);
+  } catch (err) {
+    console.error("[TALA Outbox] Failed to queue session:", err);
+    return;
+  }
+  // Best-effort na agarang padala kung online (tahimik lang kung mabigo).
+  if (navigator.onLine) void flushPendingSessions();
+}
+
+export async function flushPendingSessions(): Promise<void> {
+  if (!navigator.onLine || flushing) return;
+  flushing = true;
+  try {
+    const pending = await db.pendingSessions.toArray();
+    if (pending.length === 0) return;
+
+    for (const row of pending) {
+      const { id, ...payload } = row;
+      const { error } = await supabase.from("triage_sessions").insert([payload]);
+      if (error) {
+        // Server/permission issue — itigil muna at subukan ulit sa susunod na trigger.
+        console.error("[TALA Outbox] Flush failed, will retry later:", error.message);
+        break;
+      }
+      if (id !== undefined) await db.pendingSessions.delete(id);
+    }
+    console.log("[TALA Outbox] Flush complete");
+  } catch (err) {
+    console.error("[TALA Outbox] Flush error:", err);
+  } finally {
+    flushing = false;
   }
 }
 

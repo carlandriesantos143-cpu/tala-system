@@ -2,6 +2,7 @@ import type { TriageFlowData } from "./types";
 import { NATIONAL_EMERGENCY_NUMBER } from "../constants/emergency";
 
 export const initialData: TriageFlowData = {
+  schemaVersion: 2,
   disclaimer:
     "This triage tool is intended as a decision-support aid for trained Barangay Health Workers (BHWs) only. It does not replace professional medical judgment. In any life-threatening situation, call emergency services immediately. The recommendations provided are based on DOH-approved community health protocols and should be used in conjunction with proper training. Always refer patients to the nearest health facility when in doubt.",
 
@@ -39,7 +40,7 @@ export const initialData: TriageFlowData = {
     {
       id: 1, name: "Fever & Infection", description: "Assessment questions for fever-related complaints",
       questions: [
-        { id: 101, question: "Temperature above 39°C (102.2°F)?", yesBranch: { label: "High Fever", urgency: "Urgent", action: "Give paracetamol. Tepid sponge. Refer to RHU if persists >24hrs or danger signs.", target: { type: "result", urgency: "Urgent" } }, noBranch: { label: "Check more", urgency: "Non-Urgent", action: "Proceed to check for rash or joint pain.", target: { type: "question", questionId: 102 } } },
+        { id: 101, question: "Temperature above 39°C (102.2°F)?", yesBranch: { label: "High Fever", urgency: "Urgent", action: "Give paracetamol. Tepid sponge. Refer to RHU if persists >24hrs or danger signs.", target: { type: "result", urgency: "Urgent" }, ageEscalations: [{ ageGroupIds: [1, 2], urgency: "Emergency" }] }, noBranch: { label: "Check more", urgency: "Non-Urgent", action: "Proceed to check for rash or joint pain.", target: { type: "question", questionId: 102 } } },
         { id: 102, question: "Fever with rash or joint pain?", yesBranch: { label: "Possible Dengue", urgency: "Urgent", action: "Perform tourniquet test. Avoid aspirin. Refer for CBC and dengue NS1.", target: { type: "result", urgency: "Urgent" } }, noBranch: { label: "Check duration", urgency: "Non-Urgent", action: "Check if fever is prolonged.", target: { type: "question", questionId: 103 } } },
         { id: 103, question: "Fever lasting more than 7 days?", yesBranch: { label: "Prolonged Fever", urgency: "Urgent", action: "Refer to RHU for blood culture, typhoid screening, and evaluation.", target: { type: "result", urgency: "Urgent" } }, noBranch: { label: "Acute fever", urgency: "Semi-Urgent", action: "Continue monitoring. Give paracetamol. Return if worsening.", target: { type: "result", urgency: "Semi-Urgent" } } },
       ],
@@ -61,6 +62,7 @@ export const initialData: TriageFlowData = {
     },
     {
       id: 4, name: "Maternal Health", description: "Assessment questions for pregnant and postpartum patients",
+      ageGroupIds: [5, 6],
       questions: [
         { id: 401, question: "Vaginal bleeding during pregnancy?", yesBranch: { label: "Obstetric Emergency", urgency: "Emergency", action: "Do NOT do internal exam. Position on left side. Arrange immediate hospital transfer.", target: { type: "result", urgency: "Emergency" } }, noBranch: { label: "Check pre-eclampsia", urgency: "Non-Urgent", action: "Check for pre-eclampsia signs.", target: { type: "question", questionId: 402 } } },
         { id: 402, question: "Severe headache with blurred vision and swelling (pre-eclampsia signs)?", yesBranch: { label: "Possible Pre-eclampsia", urgency: "Emergency", action: "Check BP if available. Keep patient calm and lying down. Urgent referral to hospital.", target: { type: "result", urgency: "Emergency" } }, noBranch: { label: "Normal pregnancy complaint", urgency: "Non-Urgent", action: "Routine prenatal advice. Schedule next checkup.", target: { type: "result", urgency: "Non-Urgent" } } },
