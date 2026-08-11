@@ -32,6 +32,7 @@ import {
   effectiveUrgency,
   urgencyRank,
 } from "../../triage/types";
+import { walkCluster } from "../../triage/traversal";
 import { NATIONAL_EMERGENCY_NUMBER } from "../../constants/emergency";
 
 // SAFETY: maingat na fallback kapag walang naka-configure/nakikitang tanong para
@@ -160,38 +161,37 @@ export function TriageFlow({
       .filter((c) => c.questions.length > 0);
   }, [data, selectedAge]);
 
-  // INILIPAT SA TAAS: useCallback Hook
+  // DECISION-TREE: nilalakad ang bawat kategorya ayon sa branch.target ng admin
+  // (hindi na flat na "max ng lahat ng sagot"). Ang outcome ng bawat kategorya ay
+  // ang terminal na urgency na naabot; ang final ay ang pinakamataas sa mga
+  // natapos na kategorya (may age escalation na naka-apply sa terminal).
   const determineResult = useCallback((): ResultConfig => {
-    let highestUrgency: Urgency = "Non-Urgent";
     const visibleClusters = getVisibleClusters();
 
     // SAFETY: kung walang applicable na tanong para sa edad na ito (posibleng
     // maling config), HUWAG mag-return ng Non-Urgent (false reassurance).
-    // Ibigay ang maingat na consult-BHW result.
     if (visibleClusters.length === 0) {
       return safeConsultResult("Semi-Urgent");
     }
 
+    let highestUrgency: Urgency = "Non-Urgent";
+    let anyTerminal = false;
     for (const cluster of visibleClusters) {
-      for (const q of cluster.questions) {
-        const answer = answers[q.id];
-        if (answer === undefined) continue;
-        const branch = answer ? q.yesBranch : q.noBranch;
-        // AGE-AWARE: gamitin ang effectiveUrgency (max ng base + escalation).
-        const u = effectiveUrgency(branch, selectedAge);
-        if (urgencyRank[u] > urgencyRank[highestUrgency]) {
-          highestUrgency = u;
+      const walk = walkCluster(cluster, answers, selectedAge);
+      if (walk.terminal) {
+        anyTerminal = true;
+        if (urgencyRank[walk.terminal] > urgencyRank[highestUrgency]) {
+          highestUrgency = walk.terminal;
         }
       }
     }
 
-    // Gamitin ang eksaktong naka-configure na resulta para sa computed urgency.
-    const match = data?.resultConfigs?.find((r) => r.urgency === highestUrgency);
-    if (match) return match;
+    // Walang natapos na kategorya (hindi dapat mangyari dahil sa completion gate).
+    if (!anyTerminal) return safeConsultResult("Semi-Urgent");
 
-    // SAFETY: kung walang naka-configure na resulta para sa level na ito,
-    // HUWAG mag-default sa pinakamababa. Panatilihin ang computed urgency.
-    return safeConsultResult(highestUrgency);
+    const match = data?.resultConfigs?.find((r) => r.urgency === highestUrgency);
+    // SAFETY: kung walang config para sa level, huwag mag-default sa pinakamababa.
+    return match ?? safeConsultResult(highestUrgency);
   }, [answers, data, selectedAge, getVisibleClusters]);
 
   // Mag-log ng ANONYMOUS na session sa Supabase kapag tapos na ang triage.
@@ -201,8 +201,9 @@ export function TriageFlow({
     (result: ResultConfig | null) => {
       const ageLabel = data?.ageGroups.find((a) => a.id === selectedAge)?.label ?? null;
       const userTypeLabel = data?.userTypes.find((u) => u.id === selectedUserType)?.label ?? null;
+      // Mga kategoryang sinimulan ng residente (engaged), para sa analytics.
       const flaggedClusters = getVisibleClusters()
-        .filter((c) => c.questions.some((q) => answers[q.id] === true))
+        .filter((c) => walkCluster(c, answers, selectedAge).started)
         .map((c) => c.name);
 
       // OFFLINE-DURABLE: i-queue muna sa Dexie (hindi mawawala kahit offline),
@@ -232,23 +233,19 @@ export function TriageFlow({
     });
   };
 
-  // SAFETY: Kailangang tapusin ng residente ang assessment bago makakuha ng resulta.
-  // Hindi sapat ang iisang sagot lang (dating `answers.length > 0`) — sa flat na
-  // "max urgency" na modelo, ang kalahating sagot na cluster ay maaaring hindi
-  // mabilang ang mismong tanong na magtataas sana ng urgency. Kaya:
-  //   - kahit isang cluster ay dapat kumpletong nasagot, AT
-  //   - lahat ng cluster na SINIMULAN ay dapat kumpleto.
+  // SAFETY: kailangang MAABOT ng residente ang isang terminal (dulo ng tree) sa
+  // kahit isang kategorya, AT bawat kategoryang SINIMULAN ay dapat may terminal
+  // na rin. Sa tree model, ang "terminal" ang tamang senyales na sapat na ang
+  // impormasyon — hindi na kailangang sagutin LAHAT ng tanong.
   const isStep4Complete = () => {
-    const visible = getVisibleClusters();
-    const started = visible.filter((c) =>
-      c.questions.some((q) => answers[q.id] !== undefined),
+    const walks = getVisibleClusters().map((c) =>
+      walkCluster(c, answers, selectedAge),
     );
-    return (
-      started.length > 0 &&
-      started.every((c) =>
-        c.questions.every((q) => answers[q.id] !== undefined),
-      )
-    );
+    const anyComplete = walks.some((w) => w.complete);
+    const startedAllComplete = walks
+      .filter((w) => w.started)
+      .every((w) => w.complete);
+    return anyComplete && startedAllComplete;
   };
 
   const canNext = () => {
@@ -351,6 +348,68 @@ export function TriageFlow({
   // AGE-AWARE: mga cluster/tanong na naaangkop lang sa napiling edad.
   const visibleClusters = getVisibleClusters();
   const activeVisibleCluster = visibleClusters.find((c) => c.id === activeCluster);
+
+  // DECISION-TREE: paglalakad ng aktibong kategorya (path + kasalukuyang tanong).
+  const activeWalk = activeVisibleCluster
+    ? walkCluster(activeVisibleCluster, answers, selectedAge)
+    : null;
+
+  // Reusable na question card (Yes/No + preview). Ginagamit sa path at current node.
+  const renderQuestionCard = (q: (typeof visibleClusters)[number]["questions"][number]) => {
+    const answer = answers[q.id];
+    return (
+      <div key={q.id} className="bg-white rounded-2xl border border-gray-200 p-4">
+        <p className="text-gray-700 font-medium mb-3" style={{ fontSize: "0.85rem" }}>
+          {q.question}
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setAnswers({ ...answers, [q.id]: true })}
+            className={`flex-1 py-2.5 rounded-xl border-2 transition-all cursor-pointer font-medium ${
+              answer === true
+                ? "border-red-400 bg-red-50 text-red-700"
+                : "border-gray-200 text-gray-500 hover:border-gray-300"
+            }`}
+            style={{ fontSize: "0.82rem" }}
+          >
+            Yes
+          </button>
+          <button
+            onClick={() => setAnswers({ ...answers, [q.id]: false })}
+            className={`flex-1 py-2.5 rounded-xl border-2 transition-all cursor-pointer font-medium ${
+              answer === false
+                ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                : "border-gray-200 text-gray-500 hover:border-gray-300"
+            }`}
+            style={{ fontSize: "0.82rem" }}
+          >
+            No
+          </button>
+        </div>
+        {answer !== undefined && (
+          <div
+            className={`mt-3 p-3 rounded-xl ${
+              answer ? "bg-red-50 border border-red-100" : "bg-emerald-50 border border-emerald-100"
+            }`}
+          >
+            <p
+              className={`font-semibold mb-0.5 ${answer ? "text-red-700" : "text-emerald-700"}`}
+              style={{ fontSize: "0.72rem" }}
+            >
+              {answer ? q.yesBranch.label : q.noBranch.label} (
+              {effectiveUrgency(answer ? q.yesBranch : q.noBranch, selectedAge)})
+            </p>
+            <p
+              className={answer ? "text-red-600" : "text-emerald-600"}
+              style={{ fontSize: "0.7rem" }}
+            >
+              {answer ? q.yesBranch.action : q.noBranch.action}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Informational lang — ipinapakita sa result screen para reference ng BHW.
   // Hindi ito nakakaapekto sa pag-compute ng urgency (tingnan ang determineResult).
@@ -770,12 +829,9 @@ export function TriageFlow({
             <div className={`flex gap-2 overflow-x-auto pb-1 ${visibleClusters.length === 0 ? "hidden" : ""}`}>
               {visibleClusters.map((cluster) => {
                 const active = activeCluster === cluster.id;
-                const total = cluster.questions.length;
-                const answeredCount = cluster.questions.filter(
-                  (q) => answers[q.id] !== undefined,
-                ).length;
-                const fullyAnswered = total > 0 && answeredCount === total;
-                const partiallyAnswered = answeredCount > 0 && !fullyAnswered;
+                const walk = walkCluster(cluster, answers, selectedAge);
+                const complete = walk.complete;
+                const inProgress = walk.started && !walk.complete;
                 return (
                   <button
                     key={cluster.id}
@@ -783,124 +839,80 @@ export function TriageFlow({
                     className={`px-4 py-2.5 rounded-xl whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
                       active
                         ? "bg-emerald-600 text-white"
-                        : fullyAnswered
+                        : complete
                           ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                          : partiallyAnswered
+                          : inProgress
                             ? "bg-amber-50 text-amber-700 border border-amber-200"
                             : "bg-white text-gray-600 border border-gray-200"
                     }`}
                     style={{ fontSize: "0.78rem", fontWeight: 500 }}
                   >
                     {cluster.name}
-                    {fullyAnswered && !active && (
+                    {complete && !active && (
                       <CheckCircle2 className="w-3.5 h-3.5" />
                     )}
-                    {partiallyAnswered && !active && (
+                    {inProgress && !active && (
                       <span
-                        className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700"
-                        style={{ fontSize: "0.6rem", fontWeight: 700 }}
-                      >
-                        {answeredCount}/{total}
-                      </span>
+                        className="w-1.5 h-1.5 rounded-full bg-amber-500"
+                        aria-label="in progress"
+                      />
                     )}
                   </button>
                 );
               })}
             </div>
 
-            {/* Questions */}
+            {/* Questions — GUIDED (isa-isa, sumusunod sa decision tree) */}
             {visibleClusters.length > 0 &&
-              (activeVisibleCluster ? (
-              <div className="space-y-3">
-                {activeVisibleCluster.questions.map((q) => {
-                    const answer = answers[q.id];
+              (activeVisibleCluster && activeWalk ? (
+                <div className="space-y-3">
+                  {/* Mga nasagot na tanong sa daan (pwedeng baguhin) */}
+                  {activeWalk.path.map((p) => renderQuestionCard(p.question))}
+
+                  {/* Kasalukuyang tanong (kung hindi pa terminal) */}
+                  {activeWalk.current && renderQuestionCard(activeWalk.current)}
+
+                  {/* Outcome ng kategorya kapag naabot na ang dulo ng tree */}
+                  {activeWalk.complete && activeWalk.terminal && (() => {
+                    const style =
+                      resultStyles[activeWalk.terminal] ||
+                      resultStyles["Non-Urgent"];
                     return (
                       <div
-                        key={q.id}
-                        className="bg-white rounded-2xl border border-gray-200 p-4"
+                        className={`${style.bg} ${style.border} border-2 rounded-2xl p-4 flex items-start gap-3`}
                       >
-                        <p
-                          className="text-gray-700 font-medium mb-3"
-                          style={{ fontSize: "0.85rem" }}
-                        >
-                          {q.question}
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() =>
-                              setAnswers({ ...answers, [q.id]: true })
-                            }
-                            className={`flex-1 py-2.5 rounded-xl border-2 transition-all cursor-pointer font-medium ${
-                              answer === true
-                                ? "border-red-400 bg-red-50 text-red-700"
-                                : "border-gray-200 text-gray-500 hover:border-gray-300"
-                            }`}
+                        <CircleCheck className={`w-5 h-5 shrink-0 ${style.text}`} />
+                        <div>
+                          <p
+                            className={`font-semibold ${style.text}`}
                             style={{ fontSize: "0.82rem" }}
                           >
-                            Yes
-                          </button>
-                          <button
-                            onClick={() =>
-                              setAnswers({ ...answers, [q.id]: false })
-                            }
-                            className={`flex-1 py-2.5 rounded-xl border-2 transition-all cursor-pointer font-medium ${
-                              answer === false
-                                ? "border-emerald-400 bg-emerald-50 text-emerald-700"
-                                : "border-gray-200 text-gray-500 hover:border-gray-300"
-                            }`}
-                            style={{ fontSize: "0.82rem" }}
+                            Batay sa mga sagot, ang kategoryang ito ay:{" "}
+                            {activeWalk.terminal}
+                          </p>
+                          <p
+                            className={`${style.text} opacity-80 mt-0.5`}
+                            style={{ fontSize: "0.72rem" }}
                           >
-                            No
-                          </button>
+                            Tapikin ang <strong>Get Result</strong> sa ibaba, o
+                            pumili ng ibang kategorya kung mayroon pang ibang
+                            sintomas.
+                          </p>
                         </div>
-                        {answer !== undefined && (
-                          <div
-                            className={`mt-3 p-3 rounded-xl ${
-                              answer
-                                ? "bg-red-50 border border-red-100"
-                                : "bg-emerald-50 border border-emerald-100"
-                            }`}
-                          >
-                            <p
-                              className={`font-semibold mb-0.5 ${
-                                answer ? "text-red-700" : "text-emerald-700"
-                              }`}
-                              style={{ fontSize: "0.72rem" }}
-                            >
-                              {answer ? q.yesBranch.label : q.noBranch.label} (
-                              {effectiveUrgency(
-                                answer ? q.yesBranch : q.noBranch,
-                                selectedAge,
-                              )}
-                              )
-                            </p>
-                            <p
-                              className={`${
-                                answer ? "text-red-600" : "text-emerald-600"
-                              }`}
-                              style={{ fontSize: "0.7rem" }}
-                            >
-                              {answer ? q.yesBranch.action : q.noBranch.action}
-                            </p>
-                          </div>
-                        )}
                       </div>
                     );
-                  })}
-              </div>
-            ) : (
-              <div className="bg-gray-100 rounded-2xl p-8 text-center">
-                <Stethoscope className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500" style={{ fontSize: "0.82rem" }}>
-                  Select a symptom category above
-                </p>
-                <p
-                  className="text-gray-400 mt-1"
-                  style={{ fontSize: "0.7rem" }}
-                >
-                  Answer the questions to get guidance
-                </p>
-              </div>
+                  })()}
+                </div>
+              ) : (
+                <div className="bg-gray-100 rounded-2xl p-8 text-center">
+                  <Stethoscope className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500" style={{ fontSize: "0.82rem" }}>
+                    Select a symptom category above
+                  </p>
+                  <p className="text-gray-400 mt-1" style={{ fontSize: "0.7rem" }}>
+                    Answer the questions to get guidance
+                  </p>
+                </div>
               ))}
 
             {/* SAFETY: paalala kung hindi pa kumpleto ang assessment */}
@@ -908,8 +920,8 @@ export function TriageFlow({
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-3">
                 <CircleAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                 <p className="text-amber-700" style={{ fontSize: "0.75rem" }}>
-                  Pumili ng kategorya at sagutin ang <strong>lahat</strong> ng
-                  tanong dito bago kumuha ng resulta. Ang kumpletong sagot ay
+                  Pumili ng kategorya at sagutin ang mga tanong hanggang makakuha
+                  ng resulta ang <strong>bawat</strong> napiling kategorya. Ito ay
                   tumutulong na hindi malampasan ang mahahalagang sintomas.
                 </p>
               </div>
