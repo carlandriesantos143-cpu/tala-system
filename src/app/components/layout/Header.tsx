@@ -56,7 +56,7 @@ export function Header({ title, onNavigate }: HeaderProps) {
         localStorage.getItem(NOTIF_LAST_SEEN_KEY) ?? "1970-01-01T00:00:00.000Z";
       const { data, error } = await supabase
         .from("triage_sessions")
-        .select("id, urgency_result, red_flag_count, created_at")
+        .select("id, urgency_result, red_flag_count, created_at, completed")
         .order("created_at", { ascending: false })
         .limit(8);
 
@@ -64,13 +64,16 @@ export function Header({ title, onNavigate }: HeaderProps) {
 
       const lastSeenMs = new Date(lastSeen).getTime();
       const mapped: Notif[] = data.map((s: any) => {
-        const urgency = s.urgency_result || "Completed";
         const flags = s.red_flag_count ?? 0;
+        const abandoned = s.completed === false;
         return {
           id: String(s.id),
-          title: `New triage: ${urgency}`,
-          message:
-            flags > 0
+          title: abandoned
+            ? "Triage left unfinished"
+            : `New triage: ${s.urgency_result || "Completed"}`,
+          message: abandoned
+            ? "Resident exited before reaching a result"
+            : flags > 0
               ? `${flags} red flag${flags > 1 ? "s" : ""} flagged during assessment`
               : "Assessment completed — no red flags",
           createdAt: s.created_at,

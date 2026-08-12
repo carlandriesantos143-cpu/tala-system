@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   ArrowLeft,
   ShieldAlert,
@@ -11,6 +11,7 @@ import {
   Stethoscope,
   CircleAlert,
   CircleCheck,
+  X,
   XCircle,
   Phone,
   RotateCcw,
@@ -146,6 +147,12 @@ export function TriageFlow({
   const [answers, setAnswers] = useState<Record<number, boolean>>({});
   const [finalResult, setFinalResult] = useState<ResultConfig | null>(null);
 
+  // Naka-log na ba ang session na ito (completed MAN o abandoned)? Iwas double-log.
+  const loggedRef = useRef(false);
+
+  // Exit-confirmation modal (para hindi mawala nang aksidente ang mga sagot).
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+
   // AGE-AWARE: ibinabalik LAMANG ang mga cluster/tanong na naaangkop sa napiling
   // edad. Iisang source of truth para sa tabs, tanong, completion gate,
   // determineResult, at analytics logging — para laging magkatugma.
@@ -198,7 +205,7 @@ export function TriageFlow({
   // Fire-and-forget: hindi hinaharangan ang UI at tahimik lang kung mabigo (hal. offline).
   // Walang PII — age group / user type / outcome / red flag count lang.
   const logTriageSession = useCallback(
-    (result: ResultConfig | null) => {
+    (result: ResultConfig | null, completed: boolean = true) => {
       const ageLabel = data?.ageGroups.find((a) => a.id === selectedAge)?.label ?? null;
       const userTypeLabel = data?.userTypes.find((u) => u.id === selectedUserType)?.label ?? null;
       // Mga kategoryang sinimulan ng residente (engaged), para sa analytics.
@@ -216,13 +223,34 @@ export function TriageFlow({
         user_type: userTypeLabel,
         red_flag_count: checkedFlags.size,
         flagged_clusters: flaggedClusters,
-        completed: true,
+        completed,
         is_offline: !navigator.onLine,
         created_at: new Date().toISOString(),
       });
+      loggedRef.current = true;
     },
     [data, answers, selectedAge, selectedUserType, checkedFlags, getVisibleClusters],
   );
+
+  // ── ABANDONMENT TRACKING ────────────────────────────────────────
+  // Kung umalis ang residente sa triage nang HINDI naabot ang resulta, mag-log
+  // ng session na `completed: false` para tumpak ang "Abandoned" sa Analytics.
+  // Bawat labasan (back, TALA-home, pag-sara) ay nag-uunmount sa TriageFlow,
+  // kaya sa cleanup natin ito hinuhuli. Latest-ref pattern para laging sariwa
+  // ang halaga (iwas stale closure).
+  const maybeLogAbandonment = () => {
+    // "Engaged" = nakalampas sa disclaimer at pumili ng edad — pero walang resulta.
+    const engaged = step >= 2 && selectedAge !== null;
+    if (engaged && !loggedRef.current) {
+      logTriageSession(null, false);
+    }
+  };
+  const abandonRef = useRef(maybeLogAbandonment);
+  abandonRef.current = maybeLogAbandonment;
+
+  useEffect(() => {
+    return () => abandonRef.current();
+  }, []);
 
   const toggleFlag = (id: number) => {
     setCheckedFlags((prev) => {
@@ -302,6 +330,16 @@ export function TriageFlow({
     setActiveCluster(null);
     setAnswers({});
     setFinalResult(null);
+    // Bagong takbo — payagang mag-log muli (completed o abandoned).
+    loggedRef.current = false;
+  };
+
+  // Exit button: kung may progreso na (lampas sa disclaimer), magtanong muna;
+  // kung wala pang laman (nasa disclaimer pa lang), lumabas na agad — iwas
+  // hindi kailangang friction.
+  const handleExitClick = () => {
+    if (step >= 2) setShowExitConfirm(true);
+    else onBack();
   };
 
   // -----------------------------------------------------------------
@@ -469,7 +507,57 @@ export function TriageFlow({
         >
           {step}/5
         </span>
+        {step < 5 && (
+          <button
+            onClick={handleExitClick}
+            aria-label="Exit triage"
+            title="Exit triage"
+            className="p-2 -mr-1 rounded-xl cursor-pointer"
+            style={{ background: "rgba(255,255,255,0.6)", border: "1px solid #E2E8F0" }}
+          >
+            <X className="w-4 h-4" style={{ color: MUTED }} />
+          </button>
+        )}
       </div>
+
+      {/* Exit confirmation — neutral copy, no confirmshaming */}
+      {showExitConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-6"
+          onClick={() => setShowExitConfirm(false)}
+        >
+          <div
+            className="w-full max-w-[320px] rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-gray-800 font-semibold" style={{ fontSize: "0.95rem" }}>
+              Exit triage?
+            </h3>
+            <p className="text-gray-500 mt-1" style={{ fontSize: "0.8rem" }}>
+              Your answers will not be saved.
+            </p>
+            <div className="mt-4 flex gap-2.5">
+              <button
+                onClick={() => setShowExitConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-600 font-medium cursor-pointer"
+                style={{ fontSize: "0.82rem" }}
+              >
+                Continue
+              </button>
+              <button
+                onClick={() => {
+                  setShowExitConfirm(false);
+                  onBack();
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-medium cursor-pointer"
+                style={{ fontSize: "0.82rem" }}
+              >
+                Exit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Step progress */}
       {step < 5 && (
