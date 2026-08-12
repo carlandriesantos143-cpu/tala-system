@@ -224,6 +224,9 @@ export function AnalyticsPage() {
         ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string),
       );
     const generated = new Date().toLocaleString("en-PH", { dateStyle: "long", timeStyle: "short" });
+    // Ang <title> ang ginagamit ng browser bilang default na filename kapag "Save as PDF".
+    const stamp = new Date().toISOString().slice(0, 10);
+    const reportName = `tala-triage-report_${range.replace(/\s+/g, "-").toLowerCase()}_${stamp}`;
 
     const kpis: [string, string | number][] = [
       ["Total Assessments", stats.total.toLocaleString()],
@@ -256,7 +259,7 @@ export function AnalyticsPage() {
         .join("") || `<tr><td colspan="3" style="color:#94A3B8">No data</td></tr>`;
 
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8" />
-<title>TALA Triage Analytics Report</title>
+<title>${esc(reportName)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
