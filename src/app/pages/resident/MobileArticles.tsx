@@ -12,6 +12,7 @@ import {
 // Mga bagong imports para sa Offline DB
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../../services/localDB";
+import { SyncIndicator } from "../../components/shared/SyncIndicator";
 
 interface MobileArticlesProps {
   onBack: () => void;
@@ -203,6 +204,9 @@ export function MobileArticles({ onBack }: MobileArticlesProps) {
       </div>
 
       <div className="mx-auto flex-1 w-full max-w-[430px] overflow-auto px-4 py-4 space-y-4">
+        {/* Last-updated + manual refresh */}
+        <SyncIndicator />
+
         {/* Dynamic Categories */}
         <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar -mx-4 px-4">
           {categories.map((cat) => (

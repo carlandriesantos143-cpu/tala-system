@@ -9,6 +9,31 @@ interface HeaderProps {
   onNavigate: (page: string) => void;
 }
 
+// Isang notification = isang triage session na isinumite ng resident.
+interface Notif {
+  id: string;
+  title: string;
+  message: string;
+  createdAt: string;
+  unread: boolean;
+}
+
+// Kailan huling "nakita" ng admin ang notifications (ISO string).
+// Anumang session na mas bago rito ay itinuturing na UNREAD. Naka-persist sa
+// localStorage kaya tama pa rin kahit mag-reload — hindi na babalik ang red dot.
+const NOTIF_LAST_SEEN_KEY = "tala_notif_last_seen";
+
+function relativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "Just now";
+  if (min < 60) return `${min}m ago`;
+  const hrs = Math.floor(min / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 export function Header({ title, onNavigate }: HeaderProps) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -19,16 +44,44 @@ export function Header({ title, onNavigate }: HeaderProps) {
 
   // States para sa Notifications
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      title: "System Ready",
-      message: "TALA offline capabilities are fully synced and operational.",
-      time: "Just now"
-    }
-  ]);
-  const hasUnread = notifications.length > 0;
+  const [notifications, setNotifications] = useState<Notif[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  const unreadCount = notifications.filter((n) => n.unread).length;
+
+  // ─── FETCH RECENT TRIAGE SESSIONS AS NOTIFICATIONS ──────────
+  const fetchNotifications = async () => {
+    try {
+      const lastSeen =
+        localStorage.getItem(NOTIF_LAST_SEEN_KEY) ?? "1970-01-01T00:00:00.000Z";
+      const { data, error } = await supabase
+        .from("triage_sessions")
+        .select("id, urgency_result, red_flag_count, created_at")
+        .order("created_at", { ascending: false })
+        .limit(8);
+
+      if (error || !data) return;
+
+      const lastSeenMs = new Date(lastSeen).getTime();
+      const mapped: Notif[] = data.map((s: any) => {
+        const urgency = s.urgency_result || "Completed";
+        const flags = s.red_flag_count ?? 0;
+        return {
+          id: String(s.id),
+          title: `New triage: ${urgency}`,
+          message:
+            flags > 0
+              ? `${flags} red flag${flags > 1 ? "s" : ""} flagged during assessment`
+              : "Assessment completed — no red flags",
+          createdAt: s.created_at,
+          unread: new Date(s.created_at).getTime() > lastSeenMs,
+        };
+      });
+      setNotifications(mapped);
+    } catch (err) {
+      console.error("Error fetching notifications:", err);
+    }
+  };
 
   // ─── FETCH PROFILE DATA ─────────────────────────────────────
   const fetchAdminProfile = async () => {
@@ -50,6 +103,7 @@ export function Header({ title, onNavigate }: HeaderProps) {
 
   useEffect(() => {
     fetchAdminProfile(); // Hugutin ang data sa unang load
+    fetchNotifications(); // Hugutin din ang pinakabagong triage sessions
 
     // Makikinig ang Header kapag nag-save ang Admin sa SettingsPage
     const handleProfileUpdate = () => {
@@ -78,11 +132,16 @@ export function Header({ title, onNavigate }: HeaderProps) {
   };
 
   const handleNotificationClick = () => {
-    setShowNotifications(!showNotifications);
+    const opening = !showNotifications;
+    setShowNotifications(opening);
+    if (opening) fetchNotifications(); // Refresh sa tuwing bubuksan
   };
 
   const handleMarkAsRead = () => {
-    setNotifications([]); // Buburahin ang laman ng notifications
+    // Itala ang oras bilang "huling nakita" (naka-persist) at alisin ang unread flag.
+    // Nananatili ang listahan — hindi na "nawawala" ang history gaya ng dati.
+    localStorage.setItem(NOTIF_LAST_SEEN_KEY, new Date().toISOString());
+    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
   };
 
   const goToSettings = () => {
@@ -107,7 +166,7 @@ export function Header({ title, onNavigate }: HeaderProps) {
             aria-label="Notifications"
           >
             <Bell className="w-5 h-5" />
-            {hasUnread && (
+            {unreadCount > 0 && (
               <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse" />
             )}
           </button>
@@ -116,8 +175,8 @@ export function Header({ title, onNavigate }: HeaderProps) {
             <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="px-4 py-3 border-b border-gray-50 bg-gray-50 flex justify-between items-center">
                 <span className="text-gray-800 font-semibold" style={{ fontSize: "0.85rem" }}>Notifications</span>
-                {hasUnread && (
-                  <button 
+                {unreadCount > 0 && (
+                  <button
                     onClick={handleMarkAsRead}
                     className="text-emerald-600 hover:text-emerald-700 text-xs font-medium cursor-pointer transition-colors"
                   >
@@ -125,19 +184,28 @@ export function Header({ title, onNavigate }: HeaderProps) {
                   </button>
                 )}
               </div>
-              
+
               <div className="max-h-80 overflow-y-auto">
-                {hasUnread ? (
+                {notifications.length > 0 ? (
                   <div className="p-2 space-y-1">
                     {notifications.map((notif) => (
-                      <div key={notif.id} className="p-3 bg-emerald-50/50 hover:bg-emerald-50 rounded-xl flex gap-3 transition-colors cursor-default">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                      <div
+                        key={notif.id}
+                        className={`p-3 rounded-xl flex gap-3 transition-colors cursor-default ${
+                          notif.unread ? "bg-emerald-50/60 hover:bg-emerald-50" : "hover:bg-gray-50"
+                        }`}
+                      >
+                        <CheckCircle2
+                          className={`w-4 h-4 shrink-0 mt-0.5 ${
+                            notif.unread ? "text-emerald-500" : "text-gray-300"
+                          }`}
+                        />
                         <div>
                           <p className="text-gray-800 font-medium" style={{ fontSize: "0.8rem" }}>{notif.title}</p>
                           <p className="text-gray-500 leading-snug mt-0.5" style={{ fontSize: "0.72rem" }}>
                             {notif.message}
                           </p>
-                          <p className="text-emerald-600 font-medium mt-1.5" style={{ fontSize: "0.65rem" }}>{notif.time}</p>
+                          <p className="text-emerald-600 font-medium mt-1.5" style={{ fontSize: "0.65rem" }}>{relativeTime(notif.createdAt)}</p>
                         </div>
                       </div>
                     ))}

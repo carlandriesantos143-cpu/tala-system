@@ -4,11 +4,11 @@ import {
   User, Lock, Building2, MapPin, Heart, Wifi, WifiOff, RefreshCw,
   CheckCircle2, Trash2, Info, Save, Edit2, X, Eye, EyeOff,
   AlertTriangle, Shield, Clock, Database, HardDrive, ChevronRight,
-  XCircle, ToggleLeft, ToggleRight, Zap, CircleDot, Bell 
+  XCircle, Bell
 } from "lucide-react";
 
 import { db } from "../../services/localDB"; 
-import { fetchAndStore } from "../../services/syncService"; 
+import { fetchAndStore, LAST_SYNC_KEY, SYNCED_EVENT } from "../../services/syncService";
 
 interface AccountData {
   name: string;
@@ -108,8 +108,6 @@ export function SettingsPage() {
 
   // Sync & Cache States
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  // Persisted preference — binabasa rin ito ng main.tsx para gabayan ang auto-sync.
-  const [autoSync, setAutoSync] = useState(() => localStorage.getItem("tala_auto_sync") !== "false");
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"idle" | "success" | "failed">("idle");
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
@@ -196,6 +194,19 @@ export function SettingsPage() {
     };
   }, []);
 
+  // Manatiling live ang "Last synced" at cache stats kahit BACKGROUND/AUTO sync ang
+  // nagpalit ng data (hal. focus/visibility o reconnect). Nakikinig sa `tala:synced`
+  // event na ipinuputok ng fetchAndStore tuwing matagumpay ang sync.
+  useEffect(() => {
+    const onSynced = () => {
+      const saved = localStorage.getItem(LAST_SYNC_KEY);
+      if (saved) setLastSyncTime(new Date(saved));
+      loadCacheStats();
+    };
+    window.addEventListener(SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(SYNCED_EVENT, onSynced);
+  }, []);
+
   // Modals
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -214,15 +225,22 @@ export function SettingsPage() {
     setSyncStatus("idle");
 
     try {
-      await fetchAndStore();
-      
-      const now = new Date();
-      setLastSyncTime(now);
-      localStorage.setItem("tala_last_sync", now.toISOString());
-      
+      // fetchAndStore nagre-report na ngayon kung TALAGANG nakaabot sa server.
+      // Hindi na ito nagtatapon ng error, kaya dito natin sinusuri ang boolean —
+      // kung hindi, tunay na "failed" ang ipapakita (dating hindi kailanman lumalabas).
+      const ok = await fetchAndStore();
       await loadCacheStats();
-      setSyncStatus("success");
-      showToast("Offline data synced successfully!");
+
+      if (ok) {
+        const now = new Date();
+        setLastSyncTime(now);
+        localStorage.setItem(LAST_SYNC_KEY, now.toISOString());
+        setSyncStatus("success");
+        showToast("Offline data synced successfully!");
+      } else {
+        setSyncStatus("failed");
+        showToast("Sync failed. Check your connection.", "error");
+      }
     } catch (error) {
       setSyncStatus("failed");
       showToast("Sync failed. Check your connection.", "error");
@@ -615,7 +633,7 @@ export function SettingsPage() {
           {/* ── 3. Offline & Sync ── */}
           <div id="settings-offline">
             <Section>
-              <SectionHeader icon={Wifi} title="Offline & Sync Settings" description="Manage cached data and synchronization" />
+              <SectionHeader icon={Wifi} title="Offline & Sync Settings" description="Manage this device's cached data and syncing" />
               <div className="p-6">
                 {/* Connection status indicator */}
                 <div
@@ -640,7 +658,7 @@ export function SettingsPage() {
                 </div>
 
                 {/* Sync controls row */}
-                <div className="grid grid-cols-2 gap-4 mb-5">
+                <div className="mb-5">
                   {/* Sync now */}
                   <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                     <div className="flex items-center justify-between mb-2">
@@ -658,7 +676,7 @@ export function SettingsPage() {
                         {syncing ? "Syncing..." : "Sync Now"}
                       </button>
                     </div>
-                    <p className="text-gray-400" style={{ fontSize: "0.7rem" }}>Fetch latest data from server to local database</p>
+                    <p className="text-gray-400" style={{ fontSize: "0.7rem" }}>Fetch the latest data from the server into this device's local storage</p>
 
                     {syncStatus === "success" && !syncing && (
                       <div className="flex items-center gap-1.5 mt-2.5 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg">
@@ -678,35 +696,6 @@ export function SettingsPage() {
                         <span className="text-amber-700" style={{ fontSize: "0.7rem", fontWeight: 500 }}>Unavailable offline</span>
                       </div>
                     )}
-                  </div>
-
-                  {/* Auto sync toggle */}
-                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Zap className="w-4 h-4 text-amber-500" />
-                        <span className="text-gray-700 font-medium" style={{ fontSize: "0.85rem" }}>Auto Sync</span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const next = !autoSync;
-                          setAutoSync(next);
-                          localStorage.setItem("tala_auto_sync", String(next));
-                        }}
-                        className="cursor-pointer"
-                      >
-                        {autoSync ? <ToggleRight className="w-8 h-8 text-emerald-500" /> : <ToggleLeft className="w-8 h-8 text-gray-300" />}
-                      </button>
-                    </div>
-                    <p className="text-gray-400" style={{ fontSize: "0.7rem" }}>
-                      {autoSync ? "System syncs automatically when online" : "Automatic syncing is disabled"}
-                    </p>
-                    <div className={`flex items-center gap-1.5 mt-2.5 px-3 py-1.5 rounded-lg ${autoSync ? "bg-emerald-50 border border-emerald-100" : "bg-gray-100 border border-gray-200"}`}>
-                      <CircleDot className={`w-3.5 h-3.5 ${autoSync ? "text-emerald-600" : "text-gray-400"}`} />
-                      <span className={`${autoSync ? "text-emerald-700" : "text-gray-500"}`} style={{ fontSize: "0.7rem", fontWeight: 500 }}>
-                        Auto Sync: {autoSync ? "Enabled" : "Disabled"}
-                      </span>
-                    </div>
                   </div>
                 </div>
 
@@ -765,7 +754,7 @@ export function SettingsPage() {
                       </div>
                       <div>
                         <p className="text-gray-700 font-medium" style={{ fontSize: "0.85rem" }}>Clear Offline Cache</p>
-                        <p className="text-gray-400" style={{ fontSize: "0.72rem" }}>Remove all cached articles, protocols, and contacts from this device</p>
+                        <p className="text-gray-400" style={{ fontSize: "0.72rem" }}>Remove all cached articles, protocols, and contacts from this device only</p>
                       </div>
                     </div>
                     <button
@@ -773,7 +762,7 @@ export function SettingsPage() {
                       className="px-4 py-2 text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-xl transition-colors cursor-pointer shrink-0"
                       style={{ fontSize: "0.82rem" }}
                     >
-                      Clear Cache
+                      Clear This Device
                     </button>
                   </div>
                 </div>
@@ -841,8 +830,8 @@ export function SettingsPage() {
             <div className="flex items-center gap-3 mb-4">
               <div className="bg-amber-100 p-2.5 rounded-xl"><AlertTriangle className="w-5 h-5 text-amber-600" /></div>
               <div>
-                <h4 className="text-gray-800 font-semibold" style={{ fontSize: "0.95rem" }}>Clear Offline Data?</h4>
-                <p className="text-gray-400 mt-0.5" style={{ fontSize: "0.75rem" }}>Cached content will need to re-download</p>
+                <h4 className="text-gray-800 font-semibold" style={{ fontSize: "0.95rem" }}>Clear this device's cache?</h4>
+                <p className="text-gray-400 mt-0.5" style={{ fontSize: "0.75rem" }}>Only affects this device — content will re-download on next sync</p>
               </div>
             </div>
             <div className="flex justify-end gap-3">

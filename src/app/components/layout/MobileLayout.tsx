@@ -5,6 +5,7 @@ import { TriageFlow } from "../../pages/resident/TriageFlow";
 import { EmergencyScreen } from "../../pages/resident/EmergencyScreen";
 import { MobileArticles } from "../../pages/resident/MobileArticles";
 import { MobileContacts } from "../../pages/resident/MobileContacts";
+import { syncIfEligible } from "../../services/syncService";
 import {
   Home,
   Activity,
@@ -33,6 +34,23 @@ export function MobileLayout() {
     return () => {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  // Sariwahin ang lokal na cache kapag bumalik ang user sa app (focus / naging visible).
+  // Ito ang nagpapa-"immediate" sa pakiramdam: kapag nag-edit ang admin, tapos babalik
+  // ang resident sa TALA, awtomatikong hihila ng bagong data. Naka-throttle na (8s) at
+  // sumusunod sa auto-sync preference + online status ang `syncIfEligible`.
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void syncIfEligible();
+    };
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
     };
   }, []);
 
