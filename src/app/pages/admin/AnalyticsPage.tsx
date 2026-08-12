@@ -26,6 +26,8 @@ import {
   ChevronDown,
   Loader2,
   BarChart3,
+  Download,
+  Printer,
 } from "lucide-react";
 
 // ── Session row shape (anonymous aggregate — walang PII) ──
@@ -179,6 +181,143 @@ export function AnalyticsPage() {
 
   const stats = useMemo(() => computeStats(sessions), [sessions]);
 
+  // ── CSV export (raw anonymous sessions, respects the date range) ──
+  const downloadCsv = () => {
+    if (!sessions.length) return;
+    const headers = [
+      "created_at", "urgency_result", "age_group", "user_type",
+      "red_flag_count", "status", "connection", "flagged_clusters",
+    ];
+    const cell = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = sessions.map((s) =>
+      [
+        s.created_at,
+        s.urgency_result ?? "",
+        s.age_group ?? "",
+        s.user_type ?? "",
+        s.red_flag_count ?? 0,
+        s.completed ? "completed" : "abandoned",
+        s.is_offline ? "offline" : "online",
+        (s.flagged_clusters ?? []).join("; "),
+      ].map(cell).join(","),
+    );
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tala-triage-sessions_${range.replace(/\s+/g, "-").toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── PDF report (dependency-free: styled HTML → browser print/Save as PDF) ──
+  // Design uses TALA tokens: emerald #10B981 / #059669, charcoal #1E293B,
+  // Plus Jakarta Sans, rounded cards — to match the system design.
+  const printReport = () => {
+    if (!sessions.length) return;
+    const esc = (s: unknown) =>
+      String(s).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string),
+      );
+    const generated = new Date().toLocaleString("en-PH", { dateStyle: "long", timeStyle: "short" });
+
+    const kpis: [string, string | number][] = [
+      ["Total Assessments", stats.total.toLocaleString()],
+      ["Completed", stats.completed.toLocaleString()],
+      ["Abandoned", stats.abandoned.toLocaleString()],
+      ["Completion Rate", `${stats.completionRate}%`],
+      ["Red Flags", stats.redFlagTriggers.toLocaleString()],
+    ];
+    const kpiHtml = kpis
+      .map(([l, v]) => `<div class="kpi"><div class="lbl">${esc(l)}</div><div class="val">${esc(v)}</div></div>`)
+      .join("");
+
+    const outcomeRows = stats.triageOutcomes
+      .map((o) => {
+        const share = stats.completed ? Math.round((o.value / stats.completed) * 100) : 0;
+        return `<tr><td><span class="dot" style="background:${o.color}"></span>${esc(o.name)}</td><td class="num">${o.value}</td><td class="num">${share}%</td></tr>`;
+      })
+      .join("");
+
+    const ageRows =
+      stats.ageDistribution
+        .slice()
+        .sort((a, b) => b.count - a.count)
+        .map((a) => `<tr><td>${esc(a.group)}</td><td class="num">${a.count}</td></tr>`)
+        .join("") || `<tr><td colspan="2" style="color:#94A3B8">No data</td></tr>`;
+
+    const symptomRows =
+      stats.topSymptoms
+        .map((s) => `<tr><td>${esc(s.symptom)}</td><td class="num">${s.count}</td><td class="num">${s.pct}%</td></tr>`)
+        .join("") || `<tr><td colspan="3" style="color:#94A3B8">No data</td></tr>`;
+
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8" />
+<title>TALA Triage Analytics Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  @page{size:A4;margin:16mm 14mm;}
+  body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#1E293B;margin:0;background:#fff;}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:2px solid #10B981;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .logo{width:34px;height:34px;border-radius:10px;background:#10B981;display:flex;align-items:center;justify-content:center;}
+  .brand h1{font-size:18px;font-weight:800;letter-spacing:.14em;margin:0;color:#1E293B;}
+  .brand p{margin:2px 0 0;font-size:11px;color:#64748B;font-weight:500;}
+  .meta{text-align:right;font-size:10.5px;color:#64748B;line-height:1.5;}
+  .range{display:inline-block;margin-top:5px;padding:3px 10px;border-radius:999px;background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.28);color:#059669;font-weight:700;font-size:10px;}
+  h2.section{font-size:12.5px;font-weight:700;color:#1E293B;margin:22px 0 10px;}
+  h2.section span{color:#94A3B8;font-weight:500;font-size:10.5px;}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:18px;}
+  .kpi{border:1px solid #E2E8F0;border-radius:12px;padding:12px;}
+  .kpi .lbl{font-size:8.5px;font-weight:600;letter-spacing:.04em;color:#94A3B8;text-transform:uppercase;}
+  .kpi .val{font-size:20px;font-weight:800;color:#1E293B;margin-top:6px;}
+  .card{border:1px solid #E2E8F0;border-radius:12px;padding:6px 14px;}
+  table{width:100%;border-collapse:collapse;font-size:11px;}
+  th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94A3B8;font-weight:600;padding:8px;border-bottom:1px solid #E2E8F0;}
+  td{padding:7px 8px;border-bottom:1px solid #F1F5F9;color:#334155;}
+  td.num,th.num{text-align:right;}
+  tr:last-child td{border-bottom:none;}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:999px;margin-right:8px;vertical-align:middle;}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:22px;}
+  .note{margin-top:24px;padding:12px 14px;background:#F0FDF4;border:1px solid #DCFCE7;border-radius:12px;font-size:10px;color:#047857;line-height:1.5;}
+  .foot{margin-top:14px;padding-top:12px;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;font-size:9px;color:#94A3B8;}
+</style></head><body>
+  <div class="head">
+    <div class="brand">
+      <div class="logo"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4L12 2z" fill="#fff"/></svg></div>
+      <div><h1>TALA</h1><p>Triage Analytics Report</p></div>
+    </div>
+    <div class="meta">Generated: ${esc(generated)}<br/>Barangay Malinta, Valenzuela City<br/><span class="range">${esc(range)}</span></div>
+  </div>
+  <div class="kpis">${kpiHtml}</div>
+  <h2 class="section">Triage Outcomes <span>(of completed assessments)</span></h2>
+  <div class="card"><table><thead><tr><th>Outcome</th><th class="num">Count</th><th class="num">Share</th></tr></thead><tbody>${outcomeRows}</tbody></table></div>
+  <div class="cols">
+    <div><h2 class="section">Age Distribution</h2><div class="card"><table><thead><tr><th>Age Group</th><th class="num">Assessments</th></tr></thead><tbody>${ageRows}</tbody></table></div></div>
+    <div><h2 class="section">Top Symptom Categories</h2><div class="card"><table><thead><tr><th>Category</th><th class="num">Count</th><th class="num">Share</th></tr></thead><tbody>${symptomRows}</tbody></table></div></div>
+  </div>
+  <div class="note"><strong>Privacy:</strong> This report contains only aggregated, anonymous data for the selected period. TALA does not collect, store, or display any personally identifiable patient information.</div>
+  <div class="foot"><span>TALA — Triage and Localized health Assistance</span><span>Generated by TALA Admin</span></div>
+</body></html>`;
+
+    const w = window.open("", "_blank", "width=900,height=1000");
+    if (!w) {
+      alert("Please allow pop-ups for this site to generate the PDF report.");
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    // Bigyan ng saglit para ma-load ang font/layout bago i-print.
+    setTimeout(() => w.print(), 500);
+  };
+
   return (
     <div className="h-full overflow-auto bg-gray-50/50">
       <div className="max-w-[1400px] mx-auto px-8 py-6 space-y-6">
@@ -192,10 +331,33 @@ export function AnalyticsPage() {
               Aggregated, anonymous insights — no personal patient data is collected or displayed.
             </p>
           </div>
-          {/* Time range selector */}
-          <div className="relative">
+          <div className="flex items-center gap-3">
+            {/* Export buttons */}
             <button
-              onClick={() => setRangeOpen(!rangeOpen)}
+              onClick={downloadCsv}
+              disabled={loading || stats.total === 0}
+              title="Download raw sessions as CSV"
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl hover:border-gray-300 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ fontSize: "0.85rem" }}
+            >
+              <Download className="w-4 h-4 text-gray-400" />
+              <span className="text-gray-700">CSV</span>
+            </button>
+            <button
+              onClick={printReport}
+              disabled={loading || stats.total === 0}
+              title="Generate a printable PDF report"
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ fontSize: "0.85rem" }}
+            >
+              <Printer className="w-4 h-4" />
+              <span>PDF Report</span>
+            </button>
+
+            {/* Time range selector */}
+            <div className="relative">
+              <button
+                onClick={() => setRangeOpen(!rangeOpen)}
               className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl hover:border-gray-300 transition-colors cursor-pointer"
               style={{ fontSize: "0.85rem" }}
             >
@@ -220,6 +382,7 @@ export function AnalyticsPage() {
                 </div>
               </>
             )}
+            </div>
           </div>
         </div>
 
